@@ -1,0 +1,208 @@
+# Staging — production-shaped, on one host.
+#
+#   cp .env.staging.example .env.staging     # then fill it from the secret manager
+#   docker compose -f infra/docker/docker-compose.staging.yml --env-file .env.staging up -d --build
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# SECRETS
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Every credential arrives through `env_file` at RUN time. Nothing secret is
+# written in this file, passed as a build arg, or baked into a layer — a build
+# arg is readable in the image history forever, so it publishes rather than
+# hides. `.env.staging` is git-ignored and must never be committed.
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# WHAT THIS IS NOT
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# A single-host compose file is a staging environment, not a production
+# topology. It has one Postgres with no replica, no external load balancer, and
+# volumes on local disk. Production is described in DEPLOYMENT.md and is not
+# this file.
+
+name: kids-companion-staging
+
+services:
+  # ---------------------------------------------------------------------------
+  # Data
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-kids_companion}
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=en-US --encoding=UTF8"
+    # NOT published to the host. Staging holds synthetic data, but a database
+    # reachable from outside the compose network is a habit that follows people
+    # to production. Reach it with `docker compose exec postgres psql`.
+    expose:
+      - "5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # No migration mount here, unlike the development file. Migrations are
+    # applied by the `migrate` service below, through the same runner CI uses,
+    # so staging exercises the real migration path rather than Postgres's
+    # first-boot init directory.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-kids_companion} -q"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    expose:
+      - "6379"
+    # A password even on an internal network: the readiness probe authenticates,
+    # so an unauthenticated Redis would make that check pass for the wrong
+    # reason and hide a misconfiguration until production, where it is required.
+    command:
+      [
+        "redis-server",
+        "--requirepass",
+        "${REDIS_PASSWORD:?REDIS_PASSWORD is required}",
+        "--appendonly",
+        "yes",
+      ]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--no-auth-warning", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ---------------------------------------------------------------------------
+  # Schema
+  # ---------------------------------------------------------------------------
+  # ═══════════════════════════════════════════════════════════════════════════
+  # MIGRATIONS ARE A JOB, NOT A STARTUP STEP.
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # Runs to completion before the API or the worker starts, exactly once, from
+  # the same image they run. Migrating on API boot would mean N instances racing
+  # the same DDL on every deploy; `schema_migrations` would make that survivable
+  # but not correct, and the failure mode — a half-migrated schema serving
+  # traffic — is the one worth designing out.
+  #
+  # `restart: "no"` is load-bearing. A migration job that restarts on failure
+  # retries a migration that just failed, against a schema it may have partly
+  # changed.
+  migrate:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    image: kids-companion-api:staging
+    restart: "no"
+    command: ["node", "infra/scripts/migrate.mjs"]
+    env_file:
+      - ../../.env.staging
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kids_companion}
+      # Inside the compose network there is no TLS terminator in front of
+      # Postgres. Managed Postgres in a real staging environment requires
+      # `require`, and DEPLOYMENT.md says so; this file is the single-host case.
+      DATABASE_SSL_MODE: disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Application
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    image: kids-companion-api:staging
+    restart: unless-stopped
+    env_file:
+      - ../../.env.staging
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kids_companion}
+      DATABASE_SSL_MODE: disable
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      REDIS_TLS_ENABLED: "false"
+      API_PORT: "8080"
+    ports:
+      - "${API_PUBLISH_PORT:-8080}:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    # The image's own HEALTHCHECK is liveness. `/ready` is the one that consults
+    # the database and Redis, and it is what a load balancer in front of several
+    # instances would poll — see DEPLOYMENT.md §5.
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    image: kids-companion-api:staging
+    restart: unless-stopped
+    command: ["node", "apps/api/dist/worker.js"]
+    env_file:
+      - ../../.env.staging
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kids_companion}
+      DATABASE_SSL_MODE: disable
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      WORKER_PORT: "8081"
+    expose:
+      - "8081"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # ═══════════════════════════════════════════════════════════════════════
+    # EXACTLY ONE. NOT A DEFAULT — A CONSTRAINT.
+    # ═══════════════════════════════════════════════════════════════════════
+    #
+    # There is no distributed lock. Two workers would ask every payment rail the
+    # same question twice and race each other on the same rows. Each sweep is
+    # individually idempotent so a brief overlap during a deploy is survivable,
+    # but sustained duplication is not, and nothing would report it.
+    deploy:
+      replicas: 1
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8081/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/web.Dockerfile
+    # No build args: the dashboard reads no NEXT_PUBLIC_* values, so this image
+    # is environment-agnostic and the artifact verified here is promotable.
+    image: kids-companion-web:staging
+    restart: unless-stopped
+    env_file:
+      - ../../.env.staging
+    environment:
+      PORT: "3000"
+      # Server-side only, resolved at run time — never in the browser bundle.
+      # Inside the compose network the API is reached by service name.
+      API_BASE_URL: http://api:8080
+    ports:
+      - "${WEB_PUBLISH_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-data:

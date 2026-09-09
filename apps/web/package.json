@@ -1,0 +1,27 @@
+{
+  "name": "@kids/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Parent dashboard, marketing, and web checkout.",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "typecheck:app": "tsc --noEmit",
+    "clean": "rimraf .next dist *.tsbuildinfo",
+    "test": "vitest run --project unit --passWithNoTests"
+  },
+  "dependencies": {
+    "@kids/types": "workspace:*",
+    "@kids/ui": "workspace:*",
+    "@kids/validation": "workspace:*",
+    "next": "^16.3.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "@kids/auth",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Parent authentication and authorization: roles, sessions, tokens, provider adapters.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rimraf dist *.tsbuildinfo",
+    "test": "vitest run --project unit --passWithNoTests"
+  },
+  "dependencies": {
+    "@kids/db": "workspace:*",
+    "@kids/shared": "workspace:*",
+    "@kids/types": "workspace:*",
+    "hash-wasm": "^4.12.0",
+    "jose": "^6.2.9"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3"
+  }
+}

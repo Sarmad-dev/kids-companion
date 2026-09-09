@@ -1,0 +1,12 @@
+{
+  "//": "Type-checking context for the cross-cutting test suites. Not part of the solution build (`tsc -b`) — these files are never emitted, they only need types for the editor and for type-aware linting.",
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["node"]
+  },
+  "include": ["**/*.ts"]
+}

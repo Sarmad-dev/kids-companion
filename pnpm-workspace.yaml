@@ -1,0 +1,73 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "services/*"
+  # `tests` itself, not `tests/*`: the cross-cutting suites are one package that
+  # depends on the workspace packages they exercise.
+  - "tests"
+
+# pnpm's default (`isolated`) is stricter and prevents phantom dependencies, and
+# that strictness was the original reason for choosing pnpm. React Native's Metro
+# bundler does not reliably tolerate the symlinked layout, and a mobile app that
+# will not bundle is a worse outcome than a weaker install-time guarantee.
+#
+# The guarantee is not lost, only moved: `import-x/no-extraneous-dependencies` in
+# eslint.config.mjs fails any import of a package the importing workspace does
+# not declare. See docs/adr/0008-build-orchestration-and-module-linking.md.
+#
+# (Moved here from .npmrc: pnpm 10+ reads node-linker from pnpm-workspace.yaml,
+# not .npmrc.)
+nodeLinker: hoisted
+
+catalog:
+  # Single source of truth for shared dependency versions. Workspace packages
+  # reference these with `"zod": "catalog:"` so bumps happen in exactly one place.
+  typescript: ^6.0.3
+  zod: ^4.4.3
+  pino: ^10.3.1
+  vitest: ^4.1.10
+
+# Postinstall scripts are blocked by default — a package running arbitrary code at
+# install time is the main supply-chain vector. Each entry below is an explicit,
+# reviewed exception; adding one is a security decision, not a convenience.
+allowBuilds:
+  esbuild: true # native binary download; underlies Vitest
+  # Denied on purpose: hooks are installed explicitly from the root `prepare`
+  # script (infra/scripts/install-git-hooks.mjs), so the behaviour is visible and
+  # skippable rather than a third-party postinstall writing into .git silently.
+  simple-git-hooks: false
+  unrs-resolver: true # native binary download; underlies the ESLint import resolver
+
+minimumReleaseAgeExclude:
+  - "@expo/cli@57.0.19"
+  - "@expo/inline-modules@0.1.7"
+  - "@expo/local-build-cache-provider@57.0.8"
+  - "@expo/log-box@57.0.4"
+  - "@expo/metro-config@57.0.11"
+  - "@expo/prebuild-config@57.0.15"
+  - "@expo/router-server@57.0.8"
+  - babel-preset-expo@57.0.9
+  - expo-asset@57.0.15
+  - expo-constants@57.0.15
+  - expo-dev-client@57.0.16
+  - expo-dev-launcher@57.0.16
+  - expo-dev-menu@57.0.16
+  - expo-file-system@57.0.6
+  - expo-modules-autolinking@57.0.12
+  - expo-modules-core@57.0.14
+  - expo-modules-jsi@57.0.6
+  - expo-secure-store@57.0.2
+  - expo@57.0.17
+
+# react-three-fiber's reconciler declares `isPrimaryRenderer: false`, which is
+# right on the web (react-dom is the primary renderer) but wrong here: React
+# Native's Fabric renderer is *also* a secondary renderer, so both write context
+# values into the same `_currentValue2` slot. R3F bridges every parent context
+# into the canvas tree (its-fine's `useContextBridge`), so while its concurrent
+# root is mid-render — e.g. yielded while `useGLTF` suspends — the RN tree reads
+# R3F's bridged values. Expo Router's root container then sees a non-default
+# NavigationStateContext and throws "nested a 'NavigationContainer' inside
+# another". Flipping the flag moves R3F to `_currentValue`, isolating the two
+# trees. Revisit if https://github.com/pmndrs/react-three-fiber ships a fix.
+patchedDependencies:
+  '@react-three/fiber@9.7.0': patches/@react-three__fiber@9.7.0.patch

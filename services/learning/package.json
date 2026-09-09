@@ -1,0 +1,29 @@
+{
+  "name": "@kids/learning",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The learning-event architecture, daily and weekly aggregation, skill levels, milestones, and consistency indicators.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rimraf dist *.tsbuildinfo",
+    "test": "vitest run --project unit --passWithNoTests"
+  },
+  "dependencies": {
+    "@kids/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3"
+  }
+}

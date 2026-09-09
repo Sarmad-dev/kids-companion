@@ -1,0 +1,7 @@
+# Keeps `apps/web/public/` in the repository even while it is empty.
+#
+# `infra/docker/web.Dockerfile` copies this directory into the runtime image.
+# Docker's COPY fails the whole build when its source does not exist, so an
+# empty-but-present directory is the difference between a working image and a
+# build that dies on its last instruction. Keeping it also means any asset added
+# here later is shipped without anyone remembering to edit the Dockerfile.

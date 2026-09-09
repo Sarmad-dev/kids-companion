@@ -1,0 +1,33 @@
+node_modules
+**/node_modules
+dist
+**/dist
+.next
+**/.next
+.expo
+**/.expo
+coverage
+**/coverage
+*.tsbuildinfo
+
+.git
+.github
+.vscode
+.idea
+
+# Never let a local environment file into an image layer.
+.env
+.env.*
+!.env.example
+
+docs
+tests
+# …but the manifest must survive. `pnpm install --frozen-lockfile` validates the
+# lockfile against every workspace member, and `pnpm-workspace.yaml` lists
+# `tests`. A missing member reads as a stale lockfile and fails the build, so the
+# one file that describes it is kept while its ~1,400 test files are not.
+!tests/package.json
+
+infra/docker
+*.md
+!README.md

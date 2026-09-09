@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Kids Companion",
+    "slug": "kids-companion",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "scheme": "kidscompanion",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.kidscompanion.placeholder",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Kids Companion listens when your child taps to talk, so the character can reply. Recordings are transcribed and immediately discarded."
+      }
+    },
+    "android": {
+      "package": "app.kidscompanion.placeholder",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "edgeToEdgeEnabled": true
+    },
+    "extra": {
+      "//": "Bundle identifiers are placeholders. Real ones are registered with the store accounts before the first build — see apps/mobile/README.md.",
+      "eas": {
+        "projectId": "969bc78d-f926-4524-a4e9-581f8366c92c"
+      }
+    },
+    "owner": "mbilalkhans-team",
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

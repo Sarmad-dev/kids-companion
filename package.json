@@ -1,0 +1,96 @@
+{
+  "name": "kids-companion",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Voice-first AI conversation companion for children aged 3-10.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=24.0.0 <25",
+    "pnpm": ">=11.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --recursive --parallel --stream run dev",
+    "build": "pnpm --recursive run build",
+    "clean": "pnpm --recursive run clean && rimraf coverage .cache",
+    "typecheck": "tsc -b && pnpm --recursive run typecheck:app",
+    "lint": "tsc -b && eslint .",
+    "lint:fix": "tsc -b && eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm run test:unit && pnpm run test:integration",
+    "test:unit": "tsc -b && vitest run --project unit --passWithNoTests",
+    "test:integration": "tsc -b && vitest run --project integration --passWithNoTests",
+    "test:e2e": "tsc -b && vitest run --project e2e --passWithNoTests",
+    "test:e2e:web": "playwright test",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage --passWithNoTests",
+    "perf": "tsc -b && tsx tests/performance/run.ts",
+    "verify:no-secrets": "node infra/scripts/check-no-secrets.mjs",
+    "env:check": "node infra/scripts/check-env.mjs",
+    "docker:up": "docker compose -f infra/docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "docker:logs": "docker compose -f infra/docker/docker-compose.yml logs -f",
+    "check": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm test:unit",
+    "prepare": "node infra/scripts/install-git-hooks.mjs",
+    "db:migrate": "tsc -b && node --env-file-if-exists=.env infra/scripts/migrate.mjs",
+    "db:status": "node --env-file-if-exists=.env infra/scripts/migrate.mjs --status",
+    "db:seed:dev": "node --env-file-if-exists=.env infra/scripts/seed-dev.mjs",
+    "db:types": "tsc -b && node infra/scripts/generate-db-types.mjs",
+    "db:types:check": "tsc -b && node infra/scripts/generate-db-types.mjs --check",
+    "dev:worker": "pnpm --filter @kids/api run dev:worker",
+    "staging:up": "docker compose -f infra/docker/docker-compose.staging.yml --env-file .env.staging up -d --build",
+    "staging:down": "docker compose -f infra/docker/docker-compose.staging.yml --env-file .env.staging down",
+    "staging:logs": "docker compose -f infra/docker/docker-compose.staging.yml --env-file .env.staging logs -f",
+    "staging:migrate": "docker compose -f infra/docker/docker-compose.staging.yml --env-file .env.staging run --rm migrate",
+    "staging:ps": "docker compose -f infra/docker/docker-compose.staging.yml --env-file .env.staging ps",
+    "verify:deploy": "node infra/scripts/check-deploy.mjs",
+    "verify:audit": "node infra/scripts/check-audit.mjs",
+    "verify:storage": "tsc -b && node --env-file-if-exists=.env infra/scripts/check-storage.mjs",
+    "verify:migrations": "node infra/scripts/check-migrations.mjs",
+    "verify:references": "node infra/scripts/check-project-references.mjs"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm exec lint-staged",
+    "pre-push": "pnpm run typecheck"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,mjs,js,jsx}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ],
+    "*": [
+      "node infra/scripts/check-no-secrets.mjs"
+    ]
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.5",
+    "@eslint/js": "^10.0.1",
+    "@kids/db": "workspace:*",
+    "@kids/voice": "workspace:*",
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^24.13.3",
+    "@types/pg": "^8.21.0",
+    "@unrs/resolver-binding-wasm32-wasi": "^1.12.2",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.8.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-import-resolver-typescript": "^4.4.5",
+    "eslint-plugin-import-x": "^4.17.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "lint-staged": "^17.3.0",
+    "pg": "^8.23.0",
+    "prettier": "^3.9.6",
+    "rimraf": "^6.1.3",
+    "simple-git-hooks": "^2.13.1",
+    "tsx": "^4.23.12",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.67.0",
+    "undici": "^8.10.0",
+    "vitest": "^4.1.10"
+  }
+}

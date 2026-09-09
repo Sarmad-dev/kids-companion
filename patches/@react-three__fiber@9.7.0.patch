@@ -1,0 +1,39 @@
+diff --git a/dist/events-156d8d12.esm.js b/dist/events-156d8d12.esm.js
+index 9681d0c62238d67f2d5ad389307dfd45ee8ba7ba..7d1392291d4c941a5783c9c768316f7de1b26f70 100644
+--- a/dist/events-156d8d12.esm.js
++++ b/dist/events-156d8d12.esm.js
+@@ -15439,7 +15439,7 @@ function scheduleMicrotask(callback) {
+   }
+ }
+ const reconciler = /* @__PURE__ */createReconciler({
+-  isPrimaryRenderer: false,
++  isPrimaryRenderer: true,
+   warnsIfNotActing: false,
+   supportsMutation: true,
+   supportsPersistence: false,
+diff --git a/dist/events-4c71f21f.cjs.prod.js b/dist/events-4c71f21f.cjs.prod.js
+index 65e702ef67d954387307b168529752690a586fd0..224a761d7dd22409386291e070a74fa13c5c2162 100644
+--- a/dist/events-4c71f21f.cjs.prod.js
++++ b/dist/events-4c71f21f.cjs.prod.js
+@@ -7267,7 +7267,7 @@ function scheduleMicrotask(callback) {
+   }
+ }
+ const reconciler = /* @__PURE__ */createReconciler({
+-  isPrimaryRenderer: false,
++  isPrimaryRenderer: true,
+   warnsIfNotActing: false,
+   supportsMutation: true,
+   supportsPersistence: false,
+diff --git a/dist/events-b1bdeb1a.cjs.dev.js b/dist/events-b1bdeb1a.cjs.dev.js
+index 7785529f79299cdefe706c0df1d5c756817ca274..920bce693b57e2197fd923121d09f7794fad33e7 100644
+--- a/dist/events-b1bdeb1a.cjs.dev.js
++++ b/dist/events-b1bdeb1a.cjs.dev.js
+@@ -15464,7 +15464,7 @@ function scheduleMicrotask(callback) {
+   }
+ }
+ const reconciler = /* @__PURE__ */createReconciler({
+-  isPrimaryRenderer: false,
++  isPrimaryRenderer: true,
+   warnsIfNotActing: false,
+   supportsMutation: true,
+   supportsPersistence: false,

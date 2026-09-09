@@ -1,0 +1,75 @@
+# --- Secrets: never commit. See SECURITY.md ---
+# Every `.env*` is ignored; only the `*.example` templates are tracked.
+.env
+.env.*
+!.env.example
+!.env.development.example
+!.env.staging.example
+!.env.production.example
+*.pem
+*.key
+*.p8
+*.p12
+*.keystore
+*.jks
+service-account*.json
+google-services.json
+GoogleService-Info.plist
+secrets/
+.secrets/
+
+# --- Dependencies ---
+node_modules/
+.pnpm-store/
+
+# --- Build output ---
+dist/
+build/
+out/
+.next/
+.expo/
+.turbo/
+*.tsbuildinfo
+
+# --- Test / coverage ---
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# --- Framework generated ---
+next-env.d.ts
+expo-env.d.ts
+
+# --- Local infrastructure state ---
+supabase/.branches/
+supabase/.temp/
+*.sqlite
+*.sqlite3
+docker-compose.override.yml
+
+# --- Child data must never touch the repo. See PRIVACY.md ---
+# Any local scratch that could hold real transcripts, audio, or PII.
+*.wav
+*.mp3
+*.m4a
+*.ogg
+local-data/
+transcripts/
+
+# --- Editor / OS ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.recommended.json
+*.swp
+
+# --- Logs ---
+*.log
+npm-debug.log*
+pnpm-debug.log*
+logs/

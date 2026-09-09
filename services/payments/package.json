@@ -1,0 +1,29 @@
+{
+  "name": "@kids/payments",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Payment and subscription ports, multi-rail adapters, and entitlement resolution.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rimraf dist *.tsbuildinfo",
+    "test": "vitest run --project unit --passWithNoTests"
+  },
+  "dependencies": {
+    "@kids/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3"
+  }
+}

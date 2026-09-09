@@ -1,0 +1,50 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./services/analytics"
+    },
+    {
+      "path": "apps/api"
+    },
+    {
+      "path": "packages/config"
+    },
+    {
+      "path": "packages/db"
+    },
+    {
+      "path": "packages/shared"
+    },
+    {
+      "path": "packages/types"
+    },
+    {
+      "path": "packages/ui"
+    },
+    {
+      "path": "packages/validation"
+    },
+    {
+      "path": "services/ai"
+    },
+    {
+      "path": "services/auth"
+    },
+    {
+      "path": "services/learning"
+    },
+    {
+      "path": "services/payments"
+    },
+    {
+      "path": "services/practice"
+    },
+    {
+      "path": "services/safety"
+    },
+    {
+      "path": "services/voice"
+    }
+  ]
+}
