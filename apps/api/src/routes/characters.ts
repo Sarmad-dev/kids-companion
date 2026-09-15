@@ -151,8 +151,23 @@ export const characterRoutes = (): FastifyPluginAsyncZod => async (app) => {
         const catalogue = await loadCatalogue(tx, rows[0]?.age_group);
         const allowed = await allowedCharacterIds(tx, request.query.childId);
 
+        // The plan gate is enforced again at `/conversations/start` regardless —
+        // this is what lets the select screen mark a paid character "resting"
+        // rather than letting a child tap it and land on a 402 instead of a
+        // conversation, which is what `/start` used to be the only place this
+        // was checked.
+        const { rows: planRows } = await tx.query<{ tier: 'free' | 'paid' }>(
+          `select tier from app.parent_entitlements($1)`,
+          [request.principal?.parentId],
+        );
+        const isPaidPlan = planRows[0]?.tier === 'paid';
+
         return catalogue.map((row) =>
-          present(row, allowed.length === 0 || allowed.includes(row.id)),
+          present(
+            row,
+            (allowed.length === 0 || allowed.includes(row.id)) &&
+              (!row.requires_paid_plan || isPaidPlan),
+          ),
         );
       });
 

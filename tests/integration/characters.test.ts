@@ -159,6 +159,49 @@ describe('the character experience', () => {
       expect(slugs).not.toContain('professor-owl');
     });
 
+    /**
+     * A free-plan child must never be ABLE to tap a paid-only character.
+     *
+     * `available` is what the select screen dims — a card it does not dim is a
+     * card a child can tap, and tapping a paid character on the free plan used
+     * to sail through this screen and only fail at `/conversations/start`,
+     * surfacing to the child as the same sentence as a parental pause.
+     */
+    it('marks a paid-only character unavailable on the free plan, and available once paid', async () => {
+      const free = (
+        await harness.app.inject({
+          method: 'GET',
+          url: `/v1/characters?childId=${olderChildId}`,
+          headers: authHeader(alice.accessToken),
+        })
+      ).json<{ items: { slug: string; available: boolean }[] }>().items;
+
+      expect(free.find((i) => i.slug === 'professor-owl')?.available).toBe(false);
+      expect(free.find((i) => i.slug === 'captain-sky')?.available).toBe(false);
+      // A free character stays tappable regardless.
+      expect(free.find((i) => i.slug === 'lily-the-fairy')?.available).toBe(true);
+
+      const paying = await registerAndLogin(harness, 'char-payer');
+      const paidChildId = await createChild(paying, 'Paying Older', 2016);
+      await consent(paying, paidChildId);
+      await harness.db.query(
+        `insert into subscriptions (parent_id, plan_id, rail, status, current_period_start, current_period_end)
+         select $1, id, 'mock', 'active', now(), now() + interval '30 days'
+           from subscription_plans where code = 'family_monthly'`,
+        [paying.parentId],
+      );
+
+      const paid = (
+        await harness.app.inject({
+          method: 'GET',
+          url: `/v1/characters?childId=${paidChildId}`,
+          headers: authHeader(paying.accessToken),
+        })
+      ).json<{ items: { slug: string; available: boolean }[] }>().items;
+
+      expect(paid.find((i) => i.slug === 'professor-owl')?.available).toBe(true);
+    });
+
     it("refuses another parent's child", async () => {
       const response = await harness.app.inject({
         method: 'GET',
