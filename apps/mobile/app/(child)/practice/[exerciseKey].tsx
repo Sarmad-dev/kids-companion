@@ -47,6 +47,7 @@ export default function Practice() {
   const [talk, dispatch] = useReducer(talkReducer, initialTalkContext);
   const [session, setSession] = useState<PracticeSession | undefined>();
   const sessionRef = useRef<string | undefined>(undefined);
+  const completedRef = useRef(false);
 
   const exercises = useResource(
     async () =>
@@ -188,6 +189,14 @@ export default function Practice() {
   // Past the last word: the drill is finished, and finishing it is what records
   // the session on the parent's practice screen.
   if (target === undefined) {
+    const sessionId = sessionRef.current;
+    if (sessionId !== undefined && !completedRef.current) {
+      // Marked once per session, not once per render — this branch re-runs on
+      // every re-render while the redirect is pending.
+      completedRef.current = true;
+      void api.post(`/api/practice/sessions/${sessionId}/complete`);
+    }
+
     router.replace({
       pathname: '/(child)/practice/done',
       params: {

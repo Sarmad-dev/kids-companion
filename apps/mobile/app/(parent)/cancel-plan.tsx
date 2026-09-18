@@ -14,6 +14,7 @@ import {
   SectionTitle,
 } from '../../src/components/parent/index';
 import { useResource } from '../../src/hooks/use-resource';
+import { useStoreBilling } from '../../src/iap/use-store-billing';
 import { useApp } from '../../src/state/app-context';
 
 /**
@@ -37,6 +38,7 @@ export default function CancelPlan() {
   const { api, child } = useApp();
   const [busy, setBusy] = useState<string | undefined>(undefined);
   const [message, setMessage] = useState<{ tone: 'good' | 'danger'; text: string } | undefined>();
+  const storeBilling = useStoreBilling(api);
 
   const status = useResource(
     async () => await api.get<SubscriptionStatus>('/api/subscriptions/status'),
@@ -117,24 +119,34 @@ export default function CancelPlan() {
           </Card>
         )}
 
-        <Card gap={10}>
-          <SectionTitle>Restore purchases</SectionTitle>
-          <Body>
-            If you paid through the App Store or Google Play on another device, this finds it.
-          </Body>
-          <SecondaryButton
-            label="Restore purchases"
-            disabled={busy === 'restore'}
-            testID="do-restore"
-            onPress={() => {
-              void act(
-                'restore',
-                '/api/store/restore',
-                'We checked the store and refreshed your plan.',
-              );
-            }}
-          />
-        </Card>
+        {storeBilling.available && (
+          <Card gap={10}>
+            <SectionTitle>Restore purchases</SectionTitle>
+            <Body>
+              If you paid through the App Store or Google Play on another device, this finds it.
+            </Body>
+            <SecondaryButton
+              label={storeBilling.restoring ? 'Checking…' : 'Restore purchases'}
+              disabled={storeBilling.restoring}
+              testID="do-restore"
+              onPress={() => {
+                void (async () => {
+                  setMessage(undefined);
+                  const restored = await storeBilling.restore();
+                  if (restored === undefined) {
+                    setMessage({
+                      tone: 'danger',
+                      text: storeBilling.error ?? 'That did not go through. Nothing has changed.',
+                    });
+                    return;
+                  }
+                  setMessage({ tone: 'good', text: restored.explanation });
+                  status.reload();
+                })();
+              }}
+            />
+          </Card>
+        )}
       </ParentScreen>
     </>
   );

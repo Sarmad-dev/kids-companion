@@ -1,14 +1,16 @@
 import { router } from 'expo-router';
 
-import type { ParentProgress } from '../../src/api/client';
+import type { LearningIndicators, ParentProgress } from '../../src/api/client';
 import { ParentHeader } from '../../src/components/parent/chrome';
 import {
   Banner,
   BarChart,
+  Body,
   Card,
   CardTitle,
   ChartHeader,
   Faint,
+  Helper,
   Note,
   ParentScreen,
   Pill,
@@ -41,6 +43,14 @@ export default function ParentProgressScreen() {
   const progress = useResource(
     async () =>
       await api.get<ParentProgress>(`/api/parent/progress/${child.childId ?? ''}?days=90`),
+    [api, child.childId],
+  );
+
+  // Same rollup window, but the individual observations — not just their
+  // preamble — live on the dedicated learning endpoint.
+  const indicators = useResource(
+    async () =>
+      await api.get<LearningIndicators>(`/api/learning/indicators?childId=${child.childId ?? ''}`),
     [api, child.childId],
   );
 
@@ -104,10 +114,28 @@ export default function ParentProgressScreen() {
           )}
         </Card>
 
+        {(indicators.data?.indicators.length ?? 0) > 0 && (
+          <Card gap={14}>
+            <CardTitle>Observations</CardTitle>
+            {(indicators.data?.indicators ?? []).map((indicator) => (
+              <Card
+                key={indicator.key}
+                gap={4}
+                style={{ backgroundColor: parentTheme.colors.inset, borderWidth: 0 }}
+              >
+                <Body>{indicator.observation}</Body>
+                <Helper>{indicator.suggestion}</Helper>
+                <Faint>{indicator.notAClaim}</Faint>
+              </Card>
+            ))}
+          </Card>
+        )}
+
         <Card gap={8} style={{ backgroundColor: parentTheme.colors.inset, borderWidth: 0 }}>
           <CardTitle>What these numbers mean</CardTitle>
           <Faint>
-            {progress.data?.indicatorsPreamble ??
+            {indicators.data?.preamble ??
+              progress.data?.indicatorsPreamble ??
               'They describe how the app was used: minutes spent, words that appeared for the first time, and how often our speech model recognised an attempt. They are not a test, not a ranking, and not a developmental assessment. A quiet week means a quiet week.'}
           </Faint>
         </Card>

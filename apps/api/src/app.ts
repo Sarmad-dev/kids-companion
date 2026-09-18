@@ -29,6 +29,7 @@ import {
   createGooglePlayProvider,
   createMockStoreProvider,
   createRailRegistry,
+  createRevenueCatProvider,
   describeRegistry,
   type CardConfig,
   type CarrierBillingConfig,
@@ -232,27 +233,27 @@ export const buildApp = async (options: BuildAppOptions) => {
   const auth: AuthProvider =
     config.AUTH_PROVIDER === 'supabase'
       ? createSupabaseAuthAdapter({
-        db,
-        supabaseUrl: config.SUPABASE_URL ?? '',
-        serviceRoleKey: config.SUPABASE_SERVICE_ROLE_KEY ?? '',
-        anonKey: config.SUPABASE_ANON_KEY ?? '',
-        redirectUrl: `${config.API_PUBLIC_URL}/auth/callback`,
-      })
+          db,
+          supabaseUrl: config.SUPABASE_URL ?? '',
+          serviceRoleKey: config.SUPABASE_SERVICE_ROLE_KEY ?? '',
+          anonKey: config.SUPABASE_ANON_KEY ?? '',
+          redirectUrl: `${config.API_PUBLIC_URL}/auth/callback`,
+        })
       : createLocalAuthAdapter({
-        db,
-        tokens,
-        hashParams: {
-          memoryKib: config.PASSWORD_HASH_MEMORY_KIB,
-          iterations: config.PASSWORD_HASH_ITERATIONS,
-          parallelism: config.PASSWORD_HASH_PARALLELISM,
-        },
-        emailVerificationTtlSeconds: 86_400,
-        passwordResetTtlSeconds: 3_600,
-        maxFailedLogins: config.PARENT_GATE_MAX_ATTEMPTS,
-        lockoutMinutes: config.PARENT_GATE_LOCKOUT_MINUTES,
-        exposeTokens,
-        now,
-      });
+          db,
+          tokens,
+          hashParams: {
+            memoryKib: config.PASSWORD_HASH_MEMORY_KIB,
+            iterations: config.PASSWORD_HASH_ITERATIONS,
+            parallelism: config.PASSWORD_HASH_PARALLELISM,
+          },
+          emailVerificationTtlSeconds: 86_400,
+          passwordResetTtlSeconds: 3_600,
+          maxFailedLogins: config.PARENT_GATE_MAX_ATTEMPTS,
+          lockoutMinutes: config.PARENT_GATE_LOCKOUT_MINUTES,
+          exposeTokens,
+          now,
+        });
 
   const audit = createAuditLogger(db);
 
@@ -435,22 +436,22 @@ export const buildApp = async (options: BuildAppOptions) => {
   const audioStorage =
     options.audioStorage ??
     (config.STORAGE_PROVIDER === 's3' &&
-      config.STORAGE_S3_ENDPOINT !== undefined &&
-      config.STORAGE_S3_ACCESS_KEY_ID !== undefined &&
-      config.STORAGE_S3_SECRET_ACCESS_KEY !== undefined
+    config.STORAGE_S3_ENDPOINT !== undefined &&
+    config.STORAGE_S3_ACCESS_KEY_ID !== undefined &&
+    config.STORAGE_S3_SECRET_ACCESS_KEY !== undefined
       ? createS3AudioStorage({
-        clock,
-        endpoint: config.STORAGE_S3_ENDPOINT,
-        region: config.STORAGE_S3_REGION,
-        bucket: config.STORAGE_BUCKET_AUDIO,
-        credentials: {
-          accessKeyId: config.STORAGE_S3_ACCESS_KEY_ID,
-          secretAccessKey: config.STORAGE_S3_SECRET_ACCESS_KEY,
-          sessionToken: config.STORAGE_S3_SESSION_TOKEN,
-        },
-        forcePathStyle: config.STORAGE_S3_FORCE_PATH_STYLE,
-        timeoutMs: config.STORAGE_S3_TIMEOUT_MS,
-      })
+          clock,
+          endpoint: config.STORAGE_S3_ENDPOINT,
+          region: config.STORAGE_S3_REGION,
+          bucket: config.STORAGE_BUCKET_AUDIO,
+          credentials: {
+            accessKeyId: config.STORAGE_S3_ACCESS_KEY_ID,
+            secretAccessKey: config.STORAGE_S3_SECRET_ACCESS_KEY,
+            sessionToken: config.STORAGE_S3_SESSION_TOKEN,
+          },
+          forcePathStyle: config.STORAGE_S3_FORCE_PATH_STYLE,
+          timeoutMs: config.STORAGE_S3_TIMEOUT_MS,
+        })
       : createMemoryAudioStorage({ clock }));
 
   // Pronunciation analysis. The transcription-backed provider is the honest
@@ -494,13 +495,13 @@ export const buildApp = async (options: BuildAppOptions) => {
     config.ALERT_WEBHOOK_URL === undefined
       ? logSink
       : createWebhookAlertSink(logSink, {
-        post: createAlertWebhookTransport({
-          url: config.ALERT_WEBHOOK_URL,
-          timeoutMs: config.ALERT_WEBHOOK_TIMEOUT_MS,
-        }),
-        logger: app.log,
-        format: config.ALERT_WEBHOOK_FORMAT,
-      });
+          post: createAlertWebhookTransport({
+            url: config.ALERT_WEBHOOK_URL,
+            timeoutMs: config.ALERT_WEBHOOK_TIMEOUT_MS,
+          }),
+          logger: app.log,
+          format: config.ALERT_WEBHOOK_FORMAT,
+        });
 
   if (config.ALERT_WEBHOOK_URL === undefined) {
     // Logged on every boot rather than left as a silent default, so "alerts go
@@ -534,19 +535,19 @@ export const buildApp = async (options: BuildAppOptions) => {
   const errorTransport =
     config.ERROR_TRACKING_PROVIDER === 'sentry' && config.SENTRY_DSN !== undefined
       ? createSentryTransport({
-        dsn: config.SENTRY_DSN,
-        release: config.SERVICE_VERSION,
-        environment: config.APP_ENV,
-        timeoutMs: config.ERROR_TRACKING_TIMEOUT_MS,
-      })
-      : config.ERROR_TRACKING_PROVIDER === 'webhook' &&
-        config.ERROR_TRACKING_WEBHOOK_URL !== undefined
-        ? createWebhookTransport({
-          url: config.ERROR_TRACKING_WEBHOOK_URL,
+          dsn: config.SENTRY_DSN,
           release: config.SERVICE_VERSION,
           environment: config.APP_ENV,
           timeoutMs: config.ERROR_TRACKING_TIMEOUT_MS,
         })
+      : config.ERROR_TRACKING_PROVIDER === 'webhook' &&
+          config.ERROR_TRACKING_WEBHOOK_URL !== undefined
+        ? createWebhookTransport({
+            url: config.ERROR_TRACKING_WEBHOOK_URL,
+            release: config.SERVICE_VERSION,
+            environment: config.APP_ENV,
+            timeoutMs: config.ERROR_TRACKING_TIMEOUT_MS,
+          })
         : undefined;
 
   if (config.ERROR_TRACKING_PROVIDER === 'sentry' && errorTransport === undefined) {
@@ -618,10 +619,10 @@ export const buildApp = async (options: BuildAppOptions) => {
     config.REDIS_URL === undefined
       ? undefined
       : createRedisClient({
-        url: config.REDIS_URL,
-        tlsEnabled: config.REDIS_TLS_ENABLED,
-        logger: app.log,
-      });
+          url: config.REDIS_URL,
+          tlsEnabled: config.REDIS_TLS_ENABLED,
+          logger: app.log,
+        });
 
   if (redis === undefined) {
     app.log.warn(
@@ -638,12 +639,12 @@ export const buildApp = async (options: BuildAppOptions) => {
     config,
     ...(redis
       ? {
-        rateLimitStore: createRateLimitStore({
-          redis,
-          keyPrefix: config.REDIS_KEY_PREFIX,
-          logger: app.log,
-        }),
-      }
+          rateLimitStore: createRateLimitStore({
+            redis,
+            keyPrefix: config.REDIS_KEY_PREFIX,
+            logger: app.log,
+          }),
+        }
       : {}),
   });
   await app.register(authPlugin, { db, tokens, sessions });
@@ -828,49 +829,49 @@ export const buildApp = async (options: BuildAppOptions) => {
     config.JAZZCASH_MERCHANT_ID === undefined
       ? undefined
       : {
-        merchantId: config.JAZZCASH_MERCHANT_ID,
-        password: config.JAZZCASH_PASSWORD ?? '',
-        integritySalt: config.JAZZCASH_INTEGRITY_SALT ?? '',
-        mode: config.JAZZCASH_MODE,
-        sandboxCallbackSecret: config.PAYMENTS_SANDBOX_CALLBACK_SECRET,
-        now: railClock,
-      };
+          merchantId: config.JAZZCASH_MERCHANT_ID,
+          password: config.JAZZCASH_PASSWORD ?? '',
+          integritySalt: config.JAZZCASH_INTEGRITY_SALT ?? '',
+          mode: config.JAZZCASH_MODE,
+          sandboxCallbackSecret: config.PAYMENTS_SANDBOX_CALLBACK_SECRET,
+          now: railClock,
+        };
 
   const easypaisa: EasypaisaConfig | undefined =
     config.EASYPAISA_STORE_ID === undefined
       ? undefined
       : {
-        storeId: config.EASYPAISA_STORE_ID,
-        hashKey: config.EASYPAISA_HASH_KEY ?? '',
-        mode: config.EASYPAISA_MODE,
-        sandboxCallbackSecret: config.PAYMENTS_SANDBOX_CALLBACK_SECRET,
-        now: railClock,
-      };
+          storeId: config.EASYPAISA_STORE_ID,
+          hashKey: config.EASYPAISA_HASH_KEY ?? '',
+          mode: config.EASYPAISA_MODE,
+          sandboxCallbackSecret: config.PAYMENTS_SANDBOX_CALLBACK_SECRET,
+          now: railClock,
+        };
 
   const carrierBilling: CarrierBillingConfig | undefined =
     config.CARRIER_BILLING_MERCHANT_ID === undefined
       ? undefined
       : {
-        aggregator: config.CARRIER_BILLING_AGGREGATOR ?? '',
-        merchantId: config.CARRIER_BILLING_MERCHANT_ID,
-        apiKey: config.CARRIER_BILLING_API_KEY ?? '',
-        callbackSecret: config.CARRIER_BILLING_CALLBACK_SECRET ?? '',
-        mode: config.CARRIER_BILLING_MODE,
-        sandboxCallbackSecret: config.PAYMENTS_SANDBOX_CALLBACK_SECRET,
-        now: railClock,
-      };
+          aggregator: config.CARRIER_BILLING_AGGREGATOR ?? '',
+          merchantId: config.CARRIER_BILLING_MERCHANT_ID,
+          apiKey: config.CARRIER_BILLING_API_KEY ?? '',
+          callbackSecret: config.CARRIER_BILLING_CALLBACK_SECRET ?? '',
+          mode: config.CARRIER_BILLING_MODE,
+          sandboxCallbackSecret: config.PAYMENTS_SANDBOX_CALLBACK_SECRET,
+          now: railClock,
+        };
 
   const card: CardConfig | undefined =
     config.CARD_PROCESSOR === undefined
       ? undefined
       : {
-        processor: config.CARD_PROCESSOR,
-        secretKey: config.CARD_SECRET_KEY ?? '',
-        webhookSecret: config.CARD_WEBHOOK_SECRET ?? '',
-        mode: config.CARD_MODE,
-        sandboxCallbackSecret: config.PAYMENTS_SANDBOX_CALLBACK_SECRET,
-        now: railClock,
-      };
+          processor: config.CARD_PROCESSOR,
+          secretKey: config.CARD_SECRET_KEY ?? '',
+          webhookSecret: config.CARD_WEBHOOK_SECRET ?? '',
+          mode: config.CARD_MODE,
+          sandboxCallbackSecret: config.PAYMENTS_SANDBOX_CALLBACK_SECRET,
+          now: railClock,
+        };
 
   const railRegistry =
     options.railRegistry ??
@@ -929,6 +930,27 @@ export const buildApp = async (options: BuildAppOptions) => {
             environment: config.STORE_BILLING_ENVIRONMENT,
             productId: `${store}.monthly`,
             now: () => new Date(clock.now()),
+          }),
+        );
+        continue;
+      }
+
+      /* RevenueCat, preferred over the raw Apple/Google adapters below.
+       *
+       * One account covers both stores, so one config branch does too — see
+       * docs/REVENUECAT.md. The direct Apple/Google adapters remain as the
+       * escape hatch for whoever eventually verifies them against each
+       * store's own API directly (see services/payments/src/stores/adapters.ts). */
+      if (config.REVENUECAT_SECRET_API_KEY !== undefined) {
+        storeProviders.set(
+          store,
+          createRevenueCatProvider({
+            store,
+            secretApiKey: config.REVENUECAT_SECRET_API_KEY,
+            webhookSigningSecret: config.REVENUECAT_WEBHOOK_SIGNING_SECRET ?? '',
+            entitlementId: config.REVENUECAT_ENTITLEMENT_ID,
+            environment: config.STORE_BILLING_ENVIRONMENT,
+            clock,
           }),
         );
         continue;

@@ -528,6 +528,20 @@ export interface ParentDashboard {
   readonly controls: ParentalControls;
 }
 
+/** One row of `GET /api/learning/indicators`. Never a screening result. */
+export interface LearningIndicator {
+  readonly key: string;
+  readonly observation: string;
+  readonly suggestion: string;
+  readonly notAClaim: string;
+}
+
+/** `GET /api/learning/indicators`. */
+export interface LearningIndicators {
+  readonly preamble: string;
+  readonly indicators: readonly LearningIndicator[];
+}
+
 /** `GET /api/parent/progress/:childId`. */
 export interface ParentProgress {
   readonly daily: readonly (Activity & { day: string; active: boolean })[];

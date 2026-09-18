@@ -21,6 +21,7 @@
     "test": "vitest run --project unit --passWithNoTests"
   },
   "dependencies": {
+    "@kids/shared": "workspace:*",
     "@kids/types": "workspace:*"
   },
   "devDependencies": {

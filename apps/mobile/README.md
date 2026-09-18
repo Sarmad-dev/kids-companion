@@ -25,3 +25,9 @@ Reached only through the parent gate. Profiles, controls, history, safety flags,
 - Certificate pinning on the API origin.
 - Child sessions are device-bound and 60 minutes ([ADR-0005](../../docs/adr/0005-auth-and-session-model.md)).
 - pnpm's isolated linking may conflict with Metro — [Q-05](../../docs/OPEN_QUESTIONS.md). If so, `node-linker=hoisted` goes in `apps/mobile/.npmrc` only.
+- App Store / Play Store subscriptions go through RevenueCat
+  (`src/iap/`) — needs `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` and
+  `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY` set per build (EAS environment
+  variables, or a local `.env` for `expo start`). Requires a custom dev
+  client / EAS build — the native module is not available in Expo Go. See
+  [docs/REVENUECAT.md](../../docs/REVENUECAT.md).

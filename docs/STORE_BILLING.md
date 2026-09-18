@@ -2,9 +2,14 @@
 
 Apple App Store and Google Play subscriptions, verified server-side.
 
-**Nothing has been submitted to either store, and neither adapter is
-implemented.** What exists is the architecture, a working mock, and the
-configuration checklist below.
+**Nothing has been submitted to either store.** The direct Apple/Google
+adapters (`services/payments/src/stores/adapters.ts`) remain unimplemented —
+see §7. What IS implemented, written from documentation but not yet exercised
+against a live purchase, is a RevenueCat-backed adapter
+(`services/payments/src/stores/revenuecat.ts`) that sits in front of both
+stores. **See [REVENUECAT.md](REVENUECAT.md) for how to configure it and how
+it is used in the app** — this document stays about the architecture and
+rules that apply regardless of which adapter is behind them.
 
 ---
 
@@ -124,24 +129,28 @@ usually already exists.
 > holds the keys. A key in a bundle is a key an attacker has, which is why both
 > stores' verification APIs are server-to-server in the first place.
 
-| Variable                                                                                  | Purpose                                                                                |
-| ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `STORE_BILLING_ENABLED_STORES`                                                            | Which stores are on. **Empty is valid** — the app works normally without them          |
-| `STORE_BILLING_VERIFIED_STORES`                                                           | Human attestation. A deployed env refuses to boot with an enabled-but-unverified store |
-| `STORE_BILLING_PROVIDER`                                                                  | `live` or `mock`. `mock` is refused in a deployed environment                          |
-| `STORE_BILLING_ENVIRONMENT`                                                               | `sandbox` or `production`. Must be `production` when deployed                          |
-| `STORE_BILLING_MOCK_SECRET`                                                               | Signs mock notifications. Local and CI only                                            |
-| `STORE_BILLING_SYNC_AFTER_HOURS`                                                          | How stale a purchase may get before we re-ask regardless                               |
-| `APPLE_IAP_ISSUER_ID`, `APPLE_IAP_KEY_ID`, `APPLE_IAP_PRIVATE_KEY`, `APPLE_IAP_BUNDLE_ID` | App Store server credentials                                                           |
-| `APPLE_IAP_SHARED_SECRET`                                                                 | Legacy receipt verification, where still needed                                        |
-| `GOOGLE_PLAY_PACKAGE_NAME`, `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`                            | Play Developer API credentials                                                         |
-| `GOOGLE_PLAY_NOTIFICATION_TOPIC`                                                          | Where Real-time Developer Notifications arrive                                         |
+| Variable                                                                                      | Purpose                                                                                      |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `STORE_BILLING_ENABLED_STORES`                                                                | Which stores are on. **Empty is valid** — the app works normally without them                |
+| `STORE_BILLING_VERIFIED_STORES`                                                               | Human attestation. A deployed env refuses to boot with an enabled-but-unverified store       |
+| `STORE_BILLING_PROVIDER`                                                                      | `live` or `mock`. `mock` is refused in a deployed environment                                |
+| `STORE_BILLING_ENVIRONMENT`                                                                   | `sandbox` or `production`. Must be `production` when deployed                                |
+| `STORE_BILLING_MOCK_SECRET`                                                                   | Signs mock notifications. Local and CI only                                                  |
+| `STORE_BILLING_SYNC_AFTER_HOURS`                                                              | How stale a purchase may get before we re-ask regardless                                     |
+| `APPLE_IAP_ISSUER_ID`, `APPLE_IAP_KEY_ID`, `APPLE_IAP_PRIVATE_KEY`, `APPLE_IAP_BUNDLE_ID`     | App Store server credentials — the direct adapter, unimplemented (§7)                        |
+| `APPLE_IAP_SHARED_SECRET`                                                                     | Legacy receipt verification, where still needed                                              |
+| `GOOGLE_PLAY_PACKAGE_NAME`, `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`                                | Play Developer API credentials — the direct adapter, unimplemented (§7)                      |
+| `GOOGLE_PLAY_NOTIFICATION_TOPIC`                                                              | Where Real-time Developer Notifications arrive                                               |
+| `REVENUECAT_SECRET_API_KEY`, `REVENUECAT_WEBHOOK_SIGNING_SECRET`, `REVENUECAT_ENTITLEMENT_ID` | RevenueCat, preferred over the direct adapters when set — see [REVENUECAT.md](REVENUECAT.md) |
 
 ### Before enabling either store in production
 
-1. **Complete the verification checklist** in `APPLE_VERIFICATION` /
-   `GOOGLE_VERIFICATION` — having actually read each store's _current_
-   documentation and run its sandbox. Then add the store to
+1. **Complete the verification checklist** — `REVENUECAT_VERIFICATION` if
+   using RevenueCat (the recommended path; see REVENUECAT.md §6 for exactly
+   what a real sandbox run must confirm), or `APPLE_VERIFICATION` /
+   `GOOGLE_VERIFICATION` if integrating either store directly. Either way this
+   means having actually read the current documentation and run a real
+   sandbox purchase — not code review alone. Then add the store to
    `STORE_BILLING_VERIFIED_STORES`.
 2. **Populate `store_product_map`.** A verified purchase of an unmapped product
    grants nothing. That is deliberate: silently falling back to free would take
@@ -163,22 +172,30 @@ usually already exists.
 
 ## 7. Not done, and deliberately
 
-- **Neither live adapter is implemented.** Both refuse with a message naming
-  what is outstanding. Returning a fabricated `active` would be the worst
-  failure available to this codebase: subscriptions granted to real families
-  that nobody paid for, from an integration that looks finished.
+- **Neither DIRECT Apple/Google adapter is implemented.** Both refuse with a
+  message naming what is outstanding (`services/payments/src/stores/adapters.ts`).
+  Returning a fabricated `active` would be the worst failure available to this
+  codebase: subscriptions granted to real families that nobody paid for, from
+  an integration that looks finished. **RevenueCat (REVENUECAT.md) is the
+  live path** — it is a real adapter, written from RevenueCat's own
+  documentation, but it has NOT been exercised against a live purchase either.
+  See REVENUECAT.md §6 for exactly what remains unconfirmed.
 - **Nothing has been submitted to any store.** A store adapter that misbehaves
   does not merely fail a payment, it fails app review — and review is not a
   retry loop.
 - **No purchase UI in the child app.** Payments stay out of the child
   experience.
 - **`synchronise()` is not scheduled**, and Google acknowledgement is not
-  implemented (§6.6).
+  implemented (§6.6). This is true regardless of which adapter is behind
+  the interface — RevenueCat's own webhook retries (5 attempts, up to ~80
+  minutes) reduce how often it matters, but do not replace the sweep.
 - **Family Sharing is unhandled.** One Apple purchase can cover several people;
   whether that maps to several parent accounts is a product decision, not an
   adapter one, and today the one-purchase-one-parent rule simply refuses the
   second.
 - **Upgrades and downgrades are unhandled.** Google's linked purchase token
-  needs following, or one subscription looks like two.
+  needs following, or one subscription looks like two — and RevenueCat's
+  `PRODUCT_CHANGE` / `TRANSFER` webhook events carry the same open gap; see
+  REVENUECAT.md §6.
 - **Store billing and `SubscriptionProvider` are still separate paths**, as with
   the payment rails. Unifying them waits on [Q-02](OPEN_QUESTIONS.md).

@@ -10,6 +10,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { Platform } from 'react-native';
+import Purchases from 'react-native-purchases';
 
 import { createApiClient, type ApiClient, type AuthSession } from '../api/client';
 import type { FriendlyFailure } from '../api/errors';
@@ -64,6 +66,23 @@ const overrideBaseUrl =
   typeof envBaseUrl === 'string' && envBaseUrl !== '' ? envBaseUrl : undefined;
 
 export const API_BASE_URL: string = overrideBaseUrl ?? hostFromMetro() ?? 'http://localhost:8080';
+
+/**
+ * RevenueCat's PUBLIC SDK key — a different value from the SECRET key the
+ * server holds (see apps/api's `REVENUECAT_SECRET_API_KEY`), and safe to ship
+ * here: it can start a purchase, and nothing else. One key per store, because
+ * RevenueCat issues them that way. `undefined` on a platform or build with no
+ * key configured, which is the ordinary state for local development.
+ */
+const revenueCatApiKey = (): string | undefined => {
+  const raw =
+    Platform.OS === 'ios'
+      ? process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY
+      : Platform.OS === 'android'
+        ? process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY
+        : undefined;
+  return typeof raw === 'string' && raw !== '' ? raw : undefined;
+};
 
 /** Keychain on iOS, Keystore on Android — never AsyncStorage, which is a file. */
 const keystore = {
@@ -137,6 +156,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     [],
   );
 
+  // Configured once, anonymously, for the app's lifetime — a screen that
+  // mounted its own `Purchases.configure()` would either crash on the second
+  // call or silently reset RevenueCat's device cache. `useStoreBilling`
+  // correlates the anonymous id to a signed-in parent lazily, at purchase
+  // time, via `Purchases.logIn` — see src/iap/use-store-billing.ts.
+  useEffect(() => {
+    const apiKey = revenueCatApiKey();
+    if (apiKey === undefined) return;
+    Purchases.configure({ apiKey });
+  }, []);
+
   const session = useMemo(() => createSessionStore(keystore), []);
   const audio = useMemo((): AudioPort => createExpoAudioPort(), []);
 
@@ -199,11 +229,27 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const signOut = useCallback(async () => {
+    // Revoke the refresh token server-side FIRST, while it is still in the
+    // keystore to send. Best-effort: `api.post` never throws (see client.ts),
+    // so a parent offline or mid-outage can still sign out on this device —
+    // but when the request lands, a token that leaked before this moment
+    // stops being usable anywhere, not just here.
+    const refreshToken = await session.refreshToken();
+    if (refreshToken !== undefined) {
+      await api.post('/v1/auth/logout', { refreshToken });
+    }
     await session.signOut();
+    // Un-correlates this device from the parent who just signed out, so a
+    // different parent signing in next does not inherit their RevenueCat
+    // identity. Best-effort: if RevenueCat was never configured (no key for
+    // this platform/build), there is nothing to log out of.
+    if (revenueCatApiKey() !== undefined) {
+      await Purchases.logOut().catch(() => undefined);
+    }
     setSignedIn(false);
     setGatePassed(false);
     setChildState({});
-  }, [session]);
+  }, [session, api]);
 
   const passGate = useCallback(() => {
     setGatePassed(true);

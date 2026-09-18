@@ -453,6 +453,20 @@ const providerSchema = z.object({
   GOOGLE_PLAY_PACKAGE_NAME: optionalString,
   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: optionalString,
   GOOGLE_PLAY_NOTIFICATION_TOPIC: optionalString,
+
+  /* RevenueCat — preferred over the raw Apple/Google adapters above, because
+   * it is one stable, documented API instead of two unstable ones. Neither
+   * key is ever shipped in the mobile app; the app only ever holds a
+   * RevenueCat PUBLIC SDK key, which is a different value entirely and lives
+   * in EXPO_PUBLIC_REVENUECAT_*_API_KEY. See docs/REVENUECAT.md. */
+  REVENUECAT_SECRET_API_KEY: optionalString,
+  /* Signs `X-RevenueCat-Webhook-Signature`. Set to the SAME value configured
+   * as the webhook's signing secret in the RevenueCat dashboard. */
+  REVENUECAT_WEBHOOK_SIGNING_SECRET: optionalString,
+  /* The RevenueCat entitlement identifier this deployment grants a
+   * subscription for. Configured once in the RC dashboard; see
+   * docs/REVENUECAT.md §2. */
+  REVENUECAT_ENTITLEMENT_ID: z.string().min(1).default('premium'),
 });
 
 const quotaSchema = z.object({
@@ -653,6 +667,17 @@ export const envSchema = baseSchema.superRefine((env, ctx) => {
             'purchases in production is a free subscription for anyone with a test account',
         );
       }
+    }
+
+    /* An API key with no webhook secret can verify a purchase but can never
+     * receive a renewal, cancellation, or refund — the subscription silently
+     * goes stale the moment the store's next event fires. */
+    if (env.REVENUECAT_SECRET_API_KEY !== undefined && !env.REVENUECAT_WEBHOOK_SIGNING_SECRET) {
+      issue(
+        'REVENUECAT_WEBHOOK_SIGNING_SECRET',
+        'is required when REVENUECAT_SECRET_API_KEY is set — without it, renewals, ' +
+          'cancellations, and refunds are never applied',
+      );
     }
   }
 

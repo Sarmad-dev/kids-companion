@@ -49,3 +49,6 @@ export {
   GOOGLE_VERIFICATION,
 } from './adapters.js';
 export type { AppleStoreConfig, GooglePlayConfig } from './adapters.js';
+
+export { createRevenueCatProvider, REVENUECAT_VERIFICATION } from './revenuecat.js';
+export type { RevenueCatConfig } from './revenuecat.js';
