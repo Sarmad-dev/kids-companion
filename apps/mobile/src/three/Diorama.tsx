@@ -10,6 +10,7 @@ import type { TalkState } from '../hooks/recorder-machine';
 import { useReducedMotion } from '../hooks/reduced-motion';
 import { castMember } from '../theme/child-theme';
 
+import type { ActionRequest } from './actions';
 import { characterDefinitionFor, type CharacterRig } from './character-rig';
 import { moodFor } from './moods';
 import { useDioramaMood } from './useDioramaMood';
@@ -85,6 +86,10 @@ const HEIGHT_FRACTION = 0.36;
 const WIDTH_FRACTION = 0.52;
 export const MIN_ZOOM = 0.45;
 export const MAX_ZOOM = 3;
+
+/** A touch shorter than this, and moving less than this, is a tap not an orbit. */
+const TAP_MAX_MS = 280;
+const TAP_MAX_TRAVEL = 10;
 /** Never below the horizon, and never straight down onto the character's head. */
 export const MIN_ELEVATION = 0.03;
 export const MAX_ELEVATION = 1.02;
@@ -335,8 +340,10 @@ const Stage = ({
   talkState,
   still,
   orbit,
+  action,
 }: {
   slug: string;
+  action?: ActionRequest | undefined;
   talkState: TalkState;
   still: boolean;
   orbit: React.RefObject<OrbitState>;
@@ -345,7 +352,7 @@ const Stage = ({
   const uri = useLocalGlbUri(definition.model);
   const { scene, nodes } = useGLTF(uri);
 
-  useDioramaMood(nodes, definition.rig, moodFor(talkState), still);
+  useDioramaMood(nodes, definition.rig, moodFor(talkState), still, action);
 
   const framing = useMemo(() => measure(scene, definition.rig), [scene, definition.rig]);
   const lightPositions = useMemo(
@@ -508,6 +515,10 @@ export interface DioramaProps {
   /** Forces the flat register — used by the character preview's still frame. */
   readonly flat?: boolean;
   readonly interactive?: boolean;
+  /** A move the character should play now. A new `nonce` restarts it. */
+  readonly action?: ActionRequest | undefined;
+  /** Called when the child taps (rather than drags) the stage. */
+  readonly onPoke?: (() => void) | undefined;
   readonly testID?: string;
 }
 
@@ -521,6 +532,7 @@ export interface DioramaProps {
 export const useDioramaOrbit = (
   slug: string,
   interactive: boolean,
+  onPoke?: () => void,
 ): {
   orbit: React.RefObject<OrbitState>;
   panHandlers: ReturnType<typeof PanResponder.create>['panHandlers'];
@@ -535,6 +547,14 @@ export const useDioramaOrbit = (
    * movement since the previous frame rather than since the finger landed. */
   const lastGesture = useRef({ dx: 0, dy: 0 });
 
+  /* Held in a ref so a new callback each render does not rebuild the
+   * responder, which would drop a gesture already in progress. */
+  const poke = useRef(onPoke);
+  useEffect(() => {
+    poke.current = onPoke;
+  }, [onPoke]);
+  const grantedAt = useRef(0);
+
   const pan = useMemo(
     () =>
       PanResponder.create({
@@ -543,6 +563,7 @@ export const useDioramaOrbit = (
         onPanResponderGrant: () => {
           orbit.current.pinchDistance = 0;
           lastGesture.current = { dx: 0, dy: 0 };
+          grantedAt.current = Date.now();
         },
         onPanResponderMove: (event, gesture) => {
           const o = orbit.current;
@@ -577,7 +598,12 @@ export const useDioramaOrbit = (
             Math.max(MIN_ELEVATION, o.targetEl + dy * PITCH_PER_POINT),
           );
         },
-        onPanResponderRelease: () => {
+        onPanResponderRelease: (_event, gesture) => {
+          // A tap is a short touch that barely moved; anything else was an orbit.
+          const isTap =
+            Date.now() - grantedAt.current < TAP_MAX_MS &&
+            Math.hypot(gesture.dx, gesture.dy) < TAP_MAX_TRAVEL;
+          if (isTap) poke.current?.();
           lastGesture.current = { dx: 0, dy: 0 };
           orbit.current.pinchDistance = 0;
         },
@@ -597,10 +623,12 @@ export const Diorama = ({
   talkState,
   flat = false,
   interactive = true,
+  action,
+  onPoke,
   testID,
 }: DioramaProps) => {
   const reduced = useReducedMotion();
-  const { orbit, panHandlers } = useDioramaOrbit(slug, interactive);
+  const { orbit, panHandlers } = useDioramaOrbit(slug, interactive, onPoke);
 
   if (flat) return <FlatStage slug={slug} loading={false} />;
 
@@ -613,7 +641,13 @@ export const Diorama = ({
               between mounting and the first frame is a colour rather than a
               black rectangle. */}
           <Suspense fallback={null}>
-            <Stage slug={slug} talkState={talkState} still={reduced} orbit={orbit} />
+            <Stage
+              slug={slug}
+              talkState={talkState}
+              still={reduced}
+              orbit={orbit}
+              action={action}
+            />
           </Suspense>
         </Canvas>
       </StageBoundary>

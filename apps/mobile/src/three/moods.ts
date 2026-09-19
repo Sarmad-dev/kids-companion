@@ -85,8 +85,8 @@ export const MOODS: Readonly<Record<Mood, MoodTuning>> = {
     limbPeriod: 3,
     mouth: false,
     bobPeriod: 0,
-    wander: 0.13,
-    wanderPeriod: 7.5,
+    wander: 0.4,
+    wanderPeriod: 11,
   },
   /* Leaning in IS the whole message. Nine degrees toward the child, brows up,
    * faster breath — a body language a pre-verbal child already reads. */
@@ -103,8 +103,8 @@ export const MOODS: Readonly<Record<Mood, MoodTuning>> = {
     limbPeriod: 1.4,
     mouth: false,
     bobPeriod: 0,
-    wander: 0.04,
-    wanderPeriod: 6.0,
+    wander: 0.06,
+    wanderPeriod: 7.0,
   },
   /* The biggest tilt and turn, and the fastest blink: visibly working on it. */
   thinking: {
@@ -120,8 +120,8 @@ export const MOODS: Readonly<Record<Mood, MoodTuning>> = {
     limbPeriod: 3.4,
     mouth: false,
     bobPeriod: 0,
-    wander: 0.09,
-    wanderPeriod: 5.0,
+    wander: 0.28,
+    wanderPeriod: 6.0,
   },
   talking: {
     swayPeriod: 0.85,
@@ -136,8 +136,8 @@ export const MOODS: Readonly<Record<Mood, MoodTuning>> = {
     limbPeriod: 0.85,
     mouth: true,
     bobPeriod: 0.85,
-    wander: 0.11,
-    wanderPeriod: 3.4,
+    wander: 0.3,
+    wanderPeriod: 5.0,
   },
   sad: {
     swayPeriod: 6,
@@ -152,7 +152,7 @@ export const MOODS: Readonly<Record<Mood, MoodTuning>> = {
     limbPeriod: 5,
     mouth: false,
     bobPeriod: 0,
-    wander: 0.03,
+    wander: 0.06,
     wanderPeriod: 9.0,
   },
 };

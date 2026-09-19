@@ -2,6 +2,7 @@ import { useFrame } from '@react-three/fiber/native';
 import { useMemo, useRef } from 'react';
 import type * as THREE from 'three';
 
+import { ACTION_SECONDS, actionPose, type ActionRequest, REST_POSE } from './actions';
 import type { CharacterRig } from './character-rig';
 import { BLINK_SECONDS, MOODS, MOUTH_ENVELOPE_HZ, MOUTH_HZ, type Mood } from './moods';
 
@@ -44,6 +45,9 @@ import { BLINK_SECONDS, MOODS, MOUTH_ENVELOPE_HZ, MOUTH_HZ, type Mood } from './
  */
 
 const TWO_PI = Math.PI * 2;
+
+/** Footfalls per second while roaming. */
+const WALK_STEP_HZ = 1.7;
 
 /**
  * Every node this controller may touch, resolved once per model.
@@ -89,6 +93,7 @@ interface RestPose {
   rootX: number;
   rootZ: number;
   rootRotY: number;
+  rootScale: number;
 }
 
 const pick = (
@@ -137,9 +142,10 @@ export const useDioramaMood = (
   rig: CharacterRig,
   mood: Mood,
   still: boolean,
+  action?: ActionRequest,
 ): void => {
   const resolved = useMemo(() => resolveNodes(nodes, rig), [nodes, rig]);
-  useResolvedRigMood(resolved, mood, still);
+  useResolvedRigMood(resolved, mood, still, action);
 };
 
 /**
@@ -150,7 +156,12 @@ export const useDioramaMood = (
  * to resolve — can be driven by the exact same formulas rather than a second,
  * drifting copy of them.
  */
-export const useResolvedRigMood = (rig: RigNodes, mood: Mood, still: boolean): void => {
+export const useResolvedRigMood = (
+  rig: RigNodes,
+  mood: Mood,
+  still: boolean,
+  action?: ActionRequest,
+): void => {
   // Aliased rather than mutated-through-directly: the nodes below are mutated
   // every frame, and `no-param-reassign` reads any assignment through `rig`
   // itself as reassigning the parameter.
@@ -159,6 +170,8 @@ export const useResolvedRigMood = (rig: RigNodes, mood: Mood, still: boolean): v
   /** Captured on the first frame, so a posed rig is never snapped to zero. */
   const rest = useRef<RestPose | undefined>(undefined);
   const clock = useRef({ t: 0, nextBlink: 1.5, blink: 0 });
+  /** The move in progress. A new `nonce` restarts it, even for the same move. */
+  const move = useRef({ nonce: -1, elapsed: 0 });
 
   useFrame((_state, rawDelta) => {
     // A backgrounded app hands back one enormous delta on resume. Capped, so
@@ -182,12 +195,34 @@ export const useResolvedRigMood = (rig: RigNodes, mood: Mood, still: boolean): v
       rootX: resolved.root?.position.x ?? 0,
       rootZ: resolved.root?.position.z ?? 0,
       rootRotY: resolved.root?.rotation.y ?? 0,
+      rootScale: resolved.root?.scale.y ?? 1,
     };
     const R = rest.current;
 
     if (!still) c.t += delta;
     const t = still ? 0 : c.t;
 
+    /* ---- the move the child asked for, layered over the mood -------------- */
+    let pose = REST_POSE;
+    if (action !== undefined) {
+      if (action.nonce !== move.current.nonce) {
+        move.current = { nonce: action.nonce, elapsed: 0 };
+      }
+      const seconds = ACTION_SECONDS[action.kind];
+      move.current.elapsed += delta;
+      if (move.current.elapsed < seconds) {
+        // Reduce Motion holds the middle of the move rather than playing it.
+        pose = actionPose(action.kind, still ? 0.5 : move.current.elapsed / seconds);
+      }
+    }
+
+    /* How much the character is currently walking, 0..1: a function of how
+     * fast its path is, so a slow, small drift is a shuffle and a wide roam is
+     * a stroll. It gates the step bob and the limb swing below. */
+    const walking = still
+      ? 0
+      : Math.min(1, (M.wander * TWO_PI) / Math.max(0.5, M.wanderPeriod) / 0.16);
+    const stepPhase = t * WALK_STEP_HZ * TWO_PI;
     /* ---- chest: one breath ------------------------------------------------ */
     // Held mid-inhale under Reduce Motion rather than at either extreme: a
     // character frozen fully deflated reads as unwell.
@@ -206,8 +241,8 @@ export const useResolvedRigMood = (rig: RigNodes, mood: Mood, still: boolean): v
     if (resolved.head) {
       const sway = still ? 0.35 : Math.sin(t * (TWO_PI / M.swayPeriod));
       const bob = !still && M.bobPeriod > 0 ? Math.sin(t * (TWO_PI / M.bobPeriod)) * 0.05 : 0;
-      resolved.head.rotation.z = R.headRotation.z + sway * M.swayAmount * 0.35;
-      resolved.head.rotation.x = R.headRotation.x + M.tilt * 0.6 + bob;
+      resolved.head.rotation.z = R.headRotation.z + sway * M.swayAmount * 0.35 + pose.headRoll;
+      resolved.head.rotation.x = R.headRotation.x + M.tilt * 0.6 + bob + pose.headPitch;
       resolved.head.rotation.y =
         R.headRotation.y + M.turn * (still ? 1 : 0.6 + 0.4 * Math.sin(t * 0.7));
     }
@@ -249,13 +284,13 @@ export const useResolvedRigMood = (rig: RigNodes, mood: Mood, still: boolean): v
       if (resolved.mouthHinges) {
         resolved.mouth.rotation.x = M.mouth
           ? R.mouthRotX +
-            (still ? 0.28 : 0.1 + 0.42 * stress * Math.abs(Math.sin(t * (MOUTH_HZ + 0.4))))
+            (still ? 0.3 : 0.12 + 0.5 * stress * Math.abs(Math.sin(t * (MOUTH_HZ + 0.4))))
           : R.mouthRotX + 0.02;
       } else {
         const open = M.mouth
           ? still
             ? 2.1
-            : 1 + 3.0 * stress * Math.abs(Math.sin(t * MOUTH_HZ))
+            : 1 + 3.6 * stress * Math.abs(Math.sin(t * MOUTH_HZ))
           : 1;
         resolved.mouth.scale.y = R.mouthScaleY * open;
       }
@@ -268,9 +303,12 @@ export const useResolvedRigMood = (rig: RigNodes, mood: Mood, still: boolean): v
       limb.rotation.x =
         (R.limbRotX[i] ?? 0) +
         (still
-          ? M.limb * 0.3
+          ? M.limb * 0.3 + pose.limbLift * 0.5
           : // Phase-offset per limb, so four legs do not move as one plank.
-            Math.sin(t * (TWO_PI / M.limbPeriod) + i * 1.7) * M.limb * 0.55);
+            Math.sin(t * (TWO_PI / M.limbPeriod) + i * 1.7) * M.limb * 0.55 +
+            // Alternating, so opposite limbs swing against each other.
+            Math.sin(stepPhase + i * Math.PI) * 0.35 * walking +
+            pose.limbLift);
     }
 
     for (let i = 0; i < resolved.wings.length; i += 1) {
@@ -282,8 +320,9 @@ export const useResolvedRigMood = (rig: RigNodes, mood: Mood, still: boolean): v
       wing.rotation.z =
         (R.wingRotZ[i] ?? 0) +
         (still
-          ? M.limb * 0.25 * mirror
-          : Math.sin(t * (TWO_PI / M.limbPeriod) + i) * M.limb * 0.5 * mirror);
+          ? M.limb * 0.25 * mirror + pose.wingLift * 0.5 * mirror
+          : Math.sin(t * (TWO_PI / M.limbPeriod) + i) * M.limb * 0.5 * mirror +
+            pose.wingLift * mirror);
     }
 
     if (resolved.tail) {
@@ -296,14 +335,15 @@ export const useResolvedRigMood = (rig: RigNodes, mood: Mood, still: boolean): v
             Math.sin(t * (TWO_PI / Math.max(0.5, M.limbPeriod * 0.5))) * M.limb * 1.6);
     }
 
-    /* ---- the whole character, drifting around its spot ------------------- */
+    /* ---- the whole character, roaming its set ---------------------------- */
     if (resolved.root) {
+      let bob = 0;
       if (still) {
-        // Reduce Motion holds the POSE, so the drift collapses to its own
+        // Reduce Motion holds the POSE, so the roam collapses to its own
         // starting value rather than to a different place every mood change.
         resolved.root.position.x = R.rootX;
         resolved.root.position.z = R.rootZ;
-        resolved.root.rotation.y = R.rootRotY;
+        resolved.root.rotation.y = R.rootRotY + pose.rootRotY;
       } else {
         const period = Math.max(0.5, M.wanderPeriod);
         // Two incommensurate periods on x and z, so the path is a slow figure
@@ -311,14 +351,20 @@ export const useResolvedRigMood = (rig: RigNodes, mood: Mood, still: boolean): v
         const phase = t * (TWO_PI / period);
         resolved.root.position.x = R.rootX + Math.sin(phase) * M.wander;
         resolved.root.position.z = R.rootZ + Math.sin(phase * 0.61 + 1.1) * M.wander * 0.55;
-        // It turns to follow where it is going, at a fraction of the angle —
-        // enough to read as intent, not enough to ever show the child a back.
-        resolved.root.rotation.y = R.rootRotY + Math.sin(phase + 0.5) * M.wander * 1.6;
+        // It turns to face where it is heading, softened so it never shows the
+        // child a back: the sideways velocity, normalised, as a bounded angle.
+        const sideways = Math.cos(phase) * M.wander * (TWO_PI / period);
+        const reference = Math.max(0.05, 0.5 * M.wander * (TWO_PI / period));
+        resolved.root.rotation.y =
+          R.rootRotY + Math.atan(sideways / reference) * 0.6 * walking + pose.rootRotY;
+        // A step is a small hop, twice per stride, only while actually moving.
+        bob = Math.abs(Math.sin(stepPhase)) * 0.028 * walking;
       }
-    }
-
-    if (resolved.hovers && resolved.root) {
-      resolved.root.position.y = R.rootY + (still ? 0.02 : 0.03 + Math.sin(t * 0.9) * 0.035);
+      resolved.root.scale.setScalar(R.rootScale * pose.rootScale);
+      resolved.root.position.y =
+        R.rootY +
+        pose.rootY +
+        (resolved.hovers ? (still ? 0.02 : 0.03 + Math.sin(t * 0.9) * 0.035) : bob);
     }
   });
 };

@@ -7,3 +7,9 @@ declare module '*.glb' {
   const assetModuleId: number;
   export default assetModuleId;
 }
+
+/** The background-music loop; `wav` is already one of Metro's default asset extensions. */
+declare module '*.wav' {
+  const assetModuleId: number;
+  export default assetModuleId;
+}

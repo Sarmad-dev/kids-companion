@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -14,12 +14,20 @@ import {
   TalkButton,
   Thinking,
 } from '../../src/components/child/index';
+import { ActionBar, MusicToggle } from '../../src/components/child/InteractionControls';
 import { storySeedFor } from '../../src/content/story-seeds';
-import { initialTalkContext, talkReducer } from '../../src/hooks/recorder-machine';
+import { initialTalkContext, talkReducer, type TalkState } from '../../src/hooks/recorder-machine';
+import { useBackgroundMusic } from '../../src/hooks/use-background-music';
 import { useApp } from '../../src/state/app-context';
 import { childTheme, DEFAULT_CHARACTER } from '../../src/theme/child-theme';
 import { fonts } from '../../src/theme/fonts';
 import { showsPrompt, talkVisual } from '../../src/theme/talk-states';
+import {
+  type ActionRequest,
+  type CharacterAction,
+  POKE_ACTIONS,
+  talkingMsFor,
+} from '../../src/three/actions';
 import { ProceduralDiorama } from '../../src/three/ProceduralDiorama';
 
 /**
@@ -101,6 +109,41 @@ export default function Conversation() {
    * said anything.
    */
   const startFailure = useRef<FriendlyFailure | undefined>(undefined);
+
+  /** The move the child last asked for; a new nonce replays even the same move. */
+  const [action, setAction] = useState<ActionRequest | undefined>();
+  const playAction = useCallback((kind: CharacterAction) => {
+    setAction((current) => ({ kind, nonce: (current?.nonce ?? 0) + 1 }));
+  }, []);
+  // Cycles rather than picks at random: a child tapping the character wants to
+  // see it do something DIFFERENT each time, and a random pick repeats.
+  const pokes = useRef(0);
+  const poke = useCallback(() => {
+    const kind = POKE_ACTIONS[pokes.current % POKE_ACTIONS.length];
+    pokes.current += 1;
+    if (kind !== undefined) playAction(kind);
+  }, [playAction]);
+
+  /**
+   * Whether the mouth should move for a reply that has no audio.
+   *
+   * `speaking` only exists while a clip is playing, so a text-only reply (every
+   * story opening, and any turn the voice service could not synthesise) would
+   * otherwise leave the character silent-mouthed while the caption talks.
+   */
+  const [captionTalking, setCaptionTalking] = useState(false);
+  useEffect(() => {
+    if (talk.reply === undefined || talk.state !== 'idle') return undefined;
+    setCaptionTalking(true);
+    const timer = setTimeout(() => {
+      setCaptionTalking(false);
+    }, talkingMsFor(talk.reply));
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [talk.reply, talk.state]);
+
+  const music = useBackgroundMusic(talk.state, slug);
 
   useEffect(() => {
     let cancelled = false;
@@ -326,32 +369,56 @@ export default function Conversation() {
   }
 
   const visual = talkVisual(talk.state, slug, online);
+  // The character's mouth follows the words, not only the audio clip.
+  const stageState: TalkState = talk.state === 'idle' && captionTalking ? 'speaking' : talk.state;
+  const listening = talk.state === 'recording' || talk.state === 'requesting_permission';
   const prompt = isStory ? 'Shall we make a story?' : 'What shall we talk about?';
 
   return (
     <View style={styles.stage} testID={isStory ? 'screen-story' : 'screen-conversation'}>
-      <ProceduralDiorama slug={slug} talkState={talk.state} testID="character-scene" />
+      <ProceduralDiorama
+        slug={slug}
+        talkState={stageState}
+        action={action}
+        onPoke={poke}
+        testID="character-scene"
+      />
 
       <View
         style={[styles.overlay, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }]}
         pointerEvents="box-none"
       >
-        <View style={styles.speech} pointerEvents="none">
-          {isStory && (
-            <View style={styles.ribbon}>
-              <Text style={styles.ribbonText}>📖 Our story</Text>
-            </View>
-          )}
-          {showsPrompt(talk.state) && talk.reply === undefined ? (
-            <PromptPill text={prompt} testID="prompt-pill" />
-          ) : null}
-          {talk.reply !== undefined && <SpeechBubble text={talk.reply} testID="reply-bubble" />}
-          {talk.state === 'failed' && talk.failure !== undefined && (
-            <SpeechBubble text={talk.failure.message} testID="apology-bubble" />
-          )}
+        <View style={styles.top} pointerEvents="box-none">
+          <View style={styles.topRow} pointerEvents="box-none">
+            <QuietButton
+              label="Go home"
+              face="🏠"
+              fullWidth={false}
+              onPress={leave}
+              testID="home-button"
+              style={styles.homePill}
+            />
+            <MusicToggle enabled={music.enabled} onToggle={music.toggle} />
+          </View>
+
+          <View style={styles.speech} pointerEvents="none">
+            {isStory && (
+              <View style={styles.ribbon}>
+                <Text style={styles.ribbonText}>📖 Our story</Text>
+              </View>
+            )}
+            {showsPrompt(talk.state) && talk.reply === undefined ? (
+              <PromptPill text={prompt} testID="prompt-pill" />
+            ) : null}
+            {talk.reply !== undefined && <SpeechBubble text={talk.reply} testID="reply-bubble" />}
+            {talk.state === 'failed' && talk.failure !== undefined && (
+              <SpeechBubble text={talk.failure.message} testID="apology-bubble" />
+            )}
+          </View>
         </View>
 
         <View style={styles.controls} pointerEvents="box-none">
+          <ActionBar onAction={playAction} disabled={listening} />
           <TalkButton
             face={visual.face}
             label={visual.label}
@@ -359,14 +426,6 @@ export default function Conversation() {
             breathing={visual.breathing}
             tappable={visual.tappable}
             onPress={press}
-          />
-          <QuietButton
-            label="Go home"
-            face="🏠"
-            fullWidth={false}
-            onPress={leave}
-            testID="home-button"
-            style={styles.homePill}
           />
         </View>
       </View>
@@ -391,6 +450,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: childTheme.spacing.lg,
   },
+  top: { gap: childTheme.spacing.sm + 2 },
+  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   speech: { alignItems: 'center', gap: childTheme.spacing.sm + 2 },
   controls: { alignItems: 'center', gap: 18 },
   /* Translucent, so the set is still visible through the one control that sits

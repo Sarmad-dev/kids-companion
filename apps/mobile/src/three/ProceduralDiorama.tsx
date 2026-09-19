@@ -7,6 +7,7 @@ import type { TalkState } from '../hooks/recorder-machine';
 import { useReducedMotion } from '../hooks/reduced-motion';
 import { DEFAULT_CHARACTER, isCharacterSlug, type CharacterSlug } from '../theme/child-theme';
 
+import type { ActionRequest } from './actions';
 import {
   CharacterWash,
   type DioramaProps,
@@ -89,8 +90,10 @@ const ProceduralStage = ({
   talkState,
   still,
   orbit,
+  action,
 }: {
   slug: CharacterSlug;
+  action?: ActionRequest | undefined;
   talkState: TalkState;
   still: boolean;
   orbit: React.RefObject<OrbitState>;
@@ -115,7 +118,7 @@ const ProceduralStage = ({
   const framing = useMemo(() => measureCharacter(characterGroup, root), [characterGroup, root]);
   const ground = GROUND_LIGHT[slug] ?? GROUND_LIGHT['buddy-the-dog'] ?? '#8fc46b';
 
-  useResolvedRigMood(parts, moodFor(talkState), still);
+  useResolvedRigMood(parts, moodFor(talkState), still, action);
 
   /* The shadow is a SIBLING of the character, not a child of it: parented, it
    * would rise with Lily, Nano and Mira as they hover, and a shadow that
@@ -145,10 +148,12 @@ export const ProceduralDiorama = ({
   talkState,
   flat = false,
   interactive = true,
+  action,
+  onPoke,
   testID,
 }: DioramaProps) => {
   const reduced = useReducedMotion();
-  const { orbit, panHandlers } = useDioramaOrbit(slug, interactive);
+  const { orbit, panHandlers } = useDioramaOrbit(slug, interactive, onPoke);
   const characterSlug = isCharacterSlug(slug) ? slug : DEFAULT_CHARACTER;
 
   if (flat) return <FlatStage slug={slug} loading={false} />;
@@ -163,6 +168,7 @@ export const ProceduralDiorama = ({
             talkState={talkState}
             still={reduced}
             orbit={orbit}
+            action={action}
           />
         </Canvas>
       </StageBoundary>
