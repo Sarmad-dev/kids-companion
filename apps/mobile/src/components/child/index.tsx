@@ -8,6 +8,7 @@ import {
   Text,
   View,
   type StyleProp,
+  type TextStyle,
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -53,7 +54,7 @@ export const Title = ({
   style,
 }: {
   children: ReactNode;
-  style?: StyleProp<ViewStyle>;
+  style?: StyleProp<TextStyle>;
 }) => (
   <Text style={[styles.title, style]} accessibilityRole="header">
     {children}
