@@ -9,7 +9,7 @@ import {
 } from '../../theme/child-theme';
 
 /**
- * The cast, as flat art.
+ * The nine-character cast, as flat art.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * WHY THIS IS GEOMETRY AND NOT AN EMOJI, AND NOT A PNG
@@ -119,11 +119,141 @@ const OWL = (
   </G>
 );
 
+/**
+ * Pip. The silhouette does the work: two sharp ears are the only pointed pair
+ * in the cast, so Pip is tellable from Buddy at 30pt even though both are warm
+ * and both are a muzzle on a circle.
+ */
+const PIP = (
+  <G>
+    <Path d="M14 34 L19 1 L44 20 Z" fill="#b8472a" />
+    <Path d="M86 34 L81 1 L56 20 Z" fill="#b8472a" />
+    <Path d="M21 30 L24 11 L38 23 Z" fill="#ffd0bd" />
+    <Path d="M79 30 L76 11 L62 23 Z" fill="#ffd0bd" />
+    <Circle cx={50} cy={50} r={48} fill="#e0603d" />
+    <Ellipse cx={9} cy={62} rx={11} ry={9} fill="#ffe8da" />
+    <Ellipse cx={91} cy={62} rx={11} ry={9} fill="#ffe8da" />
+    <Rect x={27} y={29} width={15} height={4.5} rx={2.25} fill="#a83d22" />
+    <Rect x={58} y={29} width={15} height={4.5} rx={2.25} fill="#a83d22" />
+    <Ellipse cx={50} cy={69} rx={26} ry={18} fill="#ffe8da" />
+    <Circle cx={35} cy={45} r={7} fill="#ffffff" />
+    <Circle cx={65} cy={45} r={7} fill="#ffffff" />
+    <Circle cx={35.5} cy={46} r={3.8} fill="#1a1c1f" />
+    <Circle cx={65.5} cy={46} r={3.8} fill="#1a1c1f" />
+    <Path d="M50 65 L41 56 L59 56 Z" fill="#2b2118" />
+    <Path d="M42 74 Q50 82 58 74 Q50 78 42 74 Z" fill="#2b2118" />
+  </G>
+);
+
+/**
+ * Nano. The only rectangle in the cast, and the only face where the eyes and
+ * the mouth are lit rather than drawn — a robot reads as a robot from the
+ * silhouette alone, before any of the detail resolves.
+ */
+const NANO = (
+  <G>
+    <Rect x={47} y={0} width={6} height={18} rx={3} fill="#1c7d88" />
+    <Circle cx={50} cy={3} r={8} fill="#ffe27a" />
+    <Circle cx={2} cy={56} r={9} fill="#1c7d88" />
+    <Circle cx={98} cy={56} r={9} fill="#1c7d88" />
+    <Rect x={6} y={16} width={88} height={78} rx={28} fill="#2ba7b4" />
+    <Rect x={16} y={28} width={68} height={46} rx={18} fill="#0f3d43" />
+    <Circle cx={36} cy={46} r={8} fill="#8ff0f7" />
+    <Circle cx={64} cy={46} r={8} fill="#8ff0f7" />
+    <Circle cx={38} cy={43.5} r={2.6} fill="#ffffff" />
+    <Circle cx={66} cy={43.5} r={2.6} fill="#ffffff" />
+    <Rect x={38} y={59} width={24} height={7} rx={3.5} fill="#8ff0f7" />
+    <Rect x={30} y={82} width={40} height={6} rx={3} fill="#1c7d88" />
+  </G>
+);
+
+/**
+ * Mira. A pale moon on a night sky, with craters instead of hair and a low,
+ * soft brow — the calmest face in the cast, which is what a child choosing
+ * her at bedtime is choosing.
+ */
+const MIRA = (
+  <G>
+    <Circle cx={8} cy={18} r={4} fill="#ffe27a" />
+    <Circle cx={93} cy={26} r={3} fill="#ffe27a" />
+    <Circle cx={86} cy={84} r={3.5} fill="#ffe27a" />
+    <Circle cx={50} cy={50} r={48} fill="#7b86d8" />
+    <Circle cx={50} cy={50} r={40} fill="#f6f3ff" />
+    <Ellipse cx={27} cy={33} rx={7} ry={6} fill="#e2ddf4" />
+    <Ellipse cx={71} cy={68} rx={6} ry={5} fill="#e2ddf4" />
+    <Ellipse cx={31} cy={72} rx={5} ry={4} fill="#e2ddf4" />
+    <Rect x={26} y={39} width={15} height={4} rx={2} fill="#9aa2e0" />
+    <Rect x={59} y={39} width={15} height={4} rx={2} fill="#9aa2e0" />
+    <Circle cx={34} cy={53} r={6.4} fill="#ffffff" />
+    <Circle cx={66} cy={53} r={6.4} fill="#ffffff" />
+    <Circle cx={34.5} cy={54} r={3.4} fill="#2b2a44" />
+    <Circle cx={66.5} cy={54} r={3.4} fill="#2b2a44" />
+    <Ellipse cx={23} cy={64} rx={6} ry={4} fill="#efc0cf" />
+    <Ellipse cx={77} cy={64} rx={6} ry={4} fill="#efc0cf" />
+    <Path d="M43 69 Q50 76 57 69 Q50 72.5 43 69 Z" fill="#6b6690" />
+  </G>
+);
+
+/**
+ * Zia. The brim is the recognisable part and it runs past the box on both
+ * sides, so her card never reads as another circle with a face on it.
+ */
+const ZIA = (
+  <G>
+    <Ellipse cx={50} cy={17} rx={25} ry={16} fill="#7aa53c" />
+    <Ellipse cx={50} cy={29} rx={54} ry={11} fill="#6b9134" />
+    <Rect x={25} y={22} width={50} height={8} fill="#4f6b26" />
+    <Circle cx={50} cy={55} r={42} fill="#d9a06b" />
+    <Ellipse cx={14} cy={58} rx={7} ry={13} fill="#2f2620" />
+    <Ellipse cx={86} cy={58} rx={7} ry={13} fill="#2f2620" />
+    <Rect x={28} y={43} width={14} height={4.5} rx={2.25} fill="#3c2f22" />
+    <Rect x={58} y={43} width={14} height={4.5} rx={2.25} fill="#3c2f22" />
+    <Circle cx={36} cy={55} r={6.6} fill="#ffffff" />
+    <Circle cx={64} cy={55} r={6.6} fill="#ffffff" />
+    <Circle cx={36.5} cy={56} r={3.5} fill="#1a1c1f" />
+    <Circle cx={64.5} cy={56} r={3.5} fill="#1a1c1f" />
+    <Ellipse cx={24} cy={66} rx={6} ry={4} fill="#c97d55" />
+    <Ellipse cx={76} cy={66} rx={6} ry={4} fill="#c97d55" />
+    <Path d="M40 71 Q50 81 60 71 Q50 76 40 71 Z" fill="#2b2118" />
+    <Rect x={18} y={88} width={64} height={12} rx={6} fill="#d9b24a" />
+  </G>
+);
+
+/**
+ * Dada Jee. Beard first, then mouth, then moustache — in that order, so the
+ * mouth sits ON the beard the way a mouth in a beard does, rather than being
+ * painted over by it.
+ */
+const DADA = (
+  <G>
+    <Ellipse cx={50} cy={15} rx={30} ry={14} fill="#5b4a55" />
+    <Rect x={20} y={22} width={60} height={9} rx={4.5} fill="#46383f" />
+    <Circle cx={50} cy={54} r={42} fill="#e0b184" />
+    <Ellipse cx={50} cy={88} rx={31} ry={21} fill="#f4f1ec" />
+    <Ellipse cx={50} cy={77} rx={8} ry={5} fill="#7a4a42" />
+    <Ellipse cx={50} cy={69} rx={19} ry={6.5} fill="#f4f1ec" />
+    <Rect x={25} y={36} width={17} height={5} rx={2.5} fill="#f4f1ec" />
+    <Rect x={58} y={36} width={17} height={5} rx={2.5} fill="#f4f1ec" />
+    <Circle cx={35} cy={51} r={6.2} fill="#ffffff" />
+    <Circle cx={65} cy={51} r={6.2} fill="#ffffff" />
+    <Circle cx={35.5} cy={52} r={3.3} fill="#1a1c1f" />
+    <Circle cx={65.5} cy={52} r={3.3} fill="#1a1c1f" />
+    <Ellipse cx={22} cy={62} rx={6} ry={4} fill="#cf8a76" />
+    <Ellipse cx={78} cy={62} rx={6} ry={4} fill="#cf8a76" />
+    <Rect x={10} y={94} width={80} height={12} rx={6} fill="#b05c74" />
+  </G>
+);
+
 const ART: Readonly<Record<CharacterSlug, React.ReactElement>> = {
   'buddy-the-dog': BUDDY,
   'lily-the-fairy': LILY,
   'captain-sky': SKY,
   'professor-owl': OWL,
+  'pip-the-fox': PIP,
+  'nano-the-robot': NANO,
+  'mira-the-moon': MIRA,
+  'captain-zia': ZIA,
+  'dada-jee': DADA,
 };
 
 /**

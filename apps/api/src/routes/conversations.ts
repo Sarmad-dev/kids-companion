@@ -1,14 +1,6 @@
 import {
-  isConversationStyle,
-  isEncouragementStyle,
-  isFarewellStyle,
-  isGreetingStyle,
-  isPersonalityTrait,
-  isStoryStyle,
-  isVocabularyStyle,
   resolveCharacter,
   substituteName,
-  type CharacterConfig,
   type ConversationEngine,
   type HistoryMessage,
   type ProviderRegistry,
@@ -22,6 +14,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 
 import { auditOrFail, type AuditLogger } from '../audit.js';
+import { characterConfigFrom } from '../character-config.js';
 import { wordCountOf, type LearningRecorder } from '../learning-events.js';
 import { CHILD_FACING_MESSAGE, checkParentalGate } from '../parental-gate.js';
 import { requireChildOwnership } from '../plugins/auth.js';
@@ -418,56 +411,6 @@ const presentConversation = (row: ConversationRow): z.infer<typeof conversationS
  * limit on the carrier. Pre-authentication requests fall back to the IP, which
  * is all there is to key on at that point.
  */
-/**
- * Turns a character row into a config, when its traits are valid.
- *
- * Returns `undefined` for a row whose traits do not typecheck — a character
- * with a nonsense personality is refused rather than given a default one,
- * because a default would be a different companion arriving unannounced.
- */
-const characterConfigFrom = (row: {
-  slug: string;
-  display_name: string;
-  description: string;
-  allowed_age_groups: AgeGroup[];
-  personality_traits: string[];
-  conversation_style: string;
-  vocabulary_style: string;
-  encouragement_style: string;
-  story_style: string;
-  greeting_style: string;
-  farewell_style: string;
-  educational_objectives: string[];
-}): CharacterConfig | undefined => {
-  const personality = row.personality_traits.filter(isPersonalityTrait);
-  if (
-    personality.length === 0 ||
-    !isConversationStyle(row.conversation_style) ||
-    !isVocabularyStyle(row.vocabulary_style) ||
-    !isEncouragementStyle(row.encouragement_style) ||
-    !isStoryStyle(row.story_style) ||
-    !isGreetingStyle(row.greeting_style) ||
-    !isFarewellStyle(row.farewell_style)
-  ) {
-    return undefined;
-  }
-
-  return {
-    slug: row.slug,
-    displayName: row.display_name,
-    description: row.description,
-    allowedAgeGroups: row.allowed_age_groups,
-    personalityTraits: personality,
-    conversationStyle: row.conversation_style,
-    vocabularyStyle: row.vocabulary_style,
-    encouragementStyle: row.encouragement_style,
-    storyStyle: row.story_style,
-    greetingStyle: row.greeting_style,
-    farewellStyle: row.farewell_style,
-    educationalObjectives: row.educational_objectives,
-  };
-};
-
 const perParent = (request: FastifyRequest): string =>
   request.principal ? `parent:${request.principal.parentId}` : `ip:${request.ip}`;
 
@@ -486,310 +429,310 @@ const parentIdOf = (request: FastifyRequest): string => {
 
 export const conversationRoutes =
   (options: ConversationRoutesOptions): FastifyPluginAsyncZod =>
-    async (app) => {
-      const { engine, audit, db } = options;
+  async (app) => {
+    const { engine, audit, db } = options;
 
-      /* ---------------------------------------------------------------------- */
-      /* 1. POST /api/conversations/start                                       */
-      /* ---------------------------------------------------------------------- */
+    /* ---------------------------------------------------------------------- */
+    /* 1. POST /api/conversations/start                                       */
+    /* ---------------------------------------------------------------------- */
 
-      app.post(
-        '/conversations/start',
-        {
-          onRequest: [app.authenticate],
-          preHandler: [app.authorize('conversations:read_own')],
-          schema: {
-            description:
-              'Begin a conversation. Refused unless consent is satisfied and the plan allows it.',
-            body: z.object({
-              childId: z.uuid(),
-              characterId: z.uuid().optional(),
-              /** Falls back to the child's primary language. */
-              language: z.string().min(2).max(5).optional(),
-              /**
-               * What kind of session this is. Defaults to `chat`, so a client
-               * that has never heard of stories behaves exactly as before.
-               */
-              mode: z.enum(['chat', 'story']).default('chat'),
-            }),
-            response: { 201: conversationSchema.extend({ limits: limitsSchema }) },
-          },
-          config: {
-            rateLimit: {
-              max: options.startRateLimitPerHour,
-              timeWindow: '1 hour',
-              keyGenerator: perParent,
-            },
+    app.post(
+      '/conversations/start',
+      {
+        onRequest: [app.authenticate],
+        preHandler: [app.authorize('conversations:read_own')],
+        schema: {
+          description:
+            'Begin a conversation. Refused unless consent is satisfied and the plan allows it.',
+          body: z.object({
+            childId: z.uuid(),
+            characterId: z.uuid().optional(),
+            /** Falls back to the child's primary language. */
+            language: z.string().min(2).max(5).optional(),
+            /**
+             * What kind of session this is. Defaults to `chat`, so a client
+             * that has never heard of stories behaves exactly as before.
+             */
+            mode: z.enum(['chat', 'story']).default('chat'),
+          }),
+          response: { 201: conversationSchema.extend({ limits: limitsSchema }) },
+        },
+        config: {
+          rateLimit: {
+            max: options.startRateLimitPerHour,
+            timeWindow: '1 hour',
+            keyGenerator: perParent,
           },
         },
-        async (request, reply) => {
-          const { childId } = request.body;
-          const parentId = parentIdOf(request);
+      },
+      async (request, reply) => {
+        const { childId } = request.body;
+        const parentId = parentIdOf(request);
 
-          const created = await app.withParent(request, async (tx) => {
-            await requireChildOwnership(tx, childId);
+        const created = await app.withParent(request, async (tx) => {
+          await requireChildOwnership(tx, childId);
 
-            const context = await loadChildContext(tx, childId);
-            if (!context) throw notFound();
+          const context = await loadChildContext(tx, childId);
+          if (!context) throw notFound();
 
-            // EVERY parental control, not just the pause. This used to check
-            // `is_paused` alone, which meant a daily limit, a schedule, and a
-            // character allowlist were all settings the server ignored.
-            const gate = await checkParentalGate(tx, childId, options.clock, {
-              ...(request.body.characterId === undefined
-                ? {}
-                : { characterId: request.body.characterId }),
-              ...(request.body.language === undefined ? {} : { language: request.body.language }),
+          // EVERY parental control, not just the pause. This used to check
+          // `is_paused` alone, which meant a daily limit, a schedule, and a
+          // character allowlist were all settings the server ignored.
+          const gate = await checkParentalGate(tx, childId, options.clock, {
+            ...(request.body.characterId === undefined
+              ? {}
+              : { characterId: request.body.characterId }),
+            ...(request.body.language === undefined ? {} : { language: request.body.language }),
+          });
+
+          if (!gate.result.allowed) {
+            throw validationFailed([
+              {
+                field: 'childId',
+                issue: `is not permitted right now: ${gate.result.denial ?? 'blocked'}`,
+              },
+            ]);
+          }
+
+          const entitlements = await loadEntitlements(
+            tx,
+            parentId,
+            childId,
+            options.dailyTurnLimit,
+          );
+
+          if (entitlements.used >= entitlements.dailyTurnLimit) {
+            throw quotaExhausted('QUOTA_DAILY_TURNS_EXHAUSTED', {
+              limit: entitlements.dailyTurnLimit,
+              used: entitlements.used,
+              plan: entitlements.plan.plan_code,
+              resetsAt: entitlements.resetsAt,
             });
+          }
 
-            if (!gate.result.allowed) {
+          if (entitlements.active >= entitlements.plan.concurrent_conversation_limit) {
+            throw quotaExhausted('QUOTA_CONCURRENT_CONVERSATIONS', {
+              limit: entitlements.plan.concurrent_conversation_limit,
+              active: entitlements.active,
+              plan: entitlements.plan.plan_code,
+            });
+          }
+
+          if (request.body.mode === 'story') {
+            /* ═══════════════════════════════════════════════════════════════
+             * THE PARENTAL CONTROL DECIDES WHETHER STORIES EXIST AT ALL.
+             * ═══════════════════════════════════════════════════════════════
+             *
+             * `storytelling_enabled` used to reach the model as a line of
+             * prompt text — "Do not tell stories." — and nothing else. That
+             * made a parental control into a request. Refusing the session is
+             * the enforcement; the prompt line stays as the second layer for a
+             * chat that drifts towards a story on its own.
+             */
+            if (!context.storytelling_enabled) {
               throw validationFailed([
-                {
-                  field: 'childId',
-                  issue: `is not permitted right now: ${gate.result.denial ?? 'blocked'}`,
-                },
+                { field: 'mode', issue: 'stories are turned off for this child' },
               ]);
             }
 
-            const entitlements = await loadEntitlements(
-              tx,
-              parentId,
-              childId,
-              options.dailyTurnLimit,
-            );
-
-            if (entitlements.used >= entitlements.dailyTurnLimit) {
-              throw quotaExhausted('QUOTA_DAILY_TURNS_EXHAUSTED', {
-                limit: entitlements.dailyTurnLimit,
-                used: entitlements.used,
+            /* NULL is unlimited, which is how the paid plans are seeded.
+             * Treating null as zero would take stories away from the people who
+             * paid for them. */
+            const storyLimit = entitlements.plan.weekly_story_limit;
+            if (storyLimit !== null && entitlements.storiesThisWeek >= storyLimit) {
+              throw quotaExhausted('QUOTA_WEEKLY_STORIES_EXHAUSTED', {
+                limit: storyLimit,
+                used: entitlements.storiesThisWeek,
                 plan: entitlements.plan.plan_code,
-                resetsAt: entitlements.resetsAt,
+                resetsAt: await nextWeeklyReset(tx),
               });
             }
+          }
 
-            if (entitlements.active >= entitlements.plan.concurrent_conversation_limit) {
-              throw quotaExhausted('QUOTA_CONCURRENT_CONVERSATIONS', {
-                limit: entitlements.plan.concurrent_conversation_limit,
-                active: entitlements.active,
-                plan: entitlements.plan.plan_code,
-              });
-            }
-
-            if (request.body.mode === 'story') {
-              /* ═══════════════════════════════════════════════════════════════
-               * THE PARENTAL CONTROL DECIDES WHETHER STORIES EXIST AT ALL.
-               * ═══════════════════════════════════════════════════════════════
-               *
-               * `storytelling_enabled` used to reach the model as a line of
-               * prompt text — "Do not tell stories." — and nothing else. That
-               * made a parental control into a request. Refusing the session is
-               * the enforcement; the prompt line stays as the second layer for a
-               * chat that drifts towards a story on its own.
-               */
-              if (!context.storytelling_enabled) {
-                throw validationFailed([
-                  { field: 'mode', issue: 'stories are turned off for this child' },
-                ]);
-              }
-
-              /* NULL is unlimited, which is how the paid plans are seeded.
-               * Treating null as zero would take stories away from the people who
-               * paid for them. */
-              const storyLimit = entitlements.plan.weekly_story_limit;
-              if (storyLimit !== null && entitlements.storiesThisWeek >= storyLimit) {
-                throw quotaExhausted('QUOTA_WEEKLY_STORIES_EXHAUSTED', {
-                  limit: storyLimit,
-                  used: entitlements.storiesThisWeek,
-                  plan: entitlements.plan.plan_code,
-                  resetsAt: await nextWeeklyReset(tx),
-                });
-              }
-            }
-
-            const characterId =
-              request.body.characterId ??
-              (
-                await tx.query<{ id: string | null }>(
-                  `select coalesce(
+          const characterId =
+            request.body.characterId ??
+            (
+              await tx.query<{ id: string | null }>(
+                `select coalesce(
                    (select preferred_character_id from children where id = $1),
                    (select id from ai_characters
                      where status = 'active' and $2 = any(allowed_age_groups)
                        and (not requires_paid_plan or $3)
                      order by sort_order limit 1)
                  ) as id`,
-                  [childId, context.age_group, entitlements.plan.tier === 'paid'],
-                )
-              ).rows[0]?.id;
+                [childId, context.age_group, entitlements.plan.tier === 'paid'],
+              )
+            ).rows[0]?.id;
 
-            if (characterId === undefined || characterId === null) {
-              throw validationFailed([
-                { field: 'characterId', issue: 'no character is available for this age group' },
-              ]);
-            }
+          if (characterId === undefined || characterId === null) {
+            throw validationFailed([
+              { field: 'characterId', issue: 'no character is available for this age group' },
+            ]);
+          }
 
-            // Age suitability is re-checked at creation. A stale
-            // `preferred_character_id` survives a birthday that moved the child
-            // into a group the character is not offered for.
-            const { rows: candidate } = await tx.query<{
-              slug: string;
-              display_name: string;
-              requires_paid_plan: boolean;
-              age_ok: boolean;
-            }>(
-              `select slug, display_name, requires_paid_plan,
+          // Age suitability is re-checked at creation. A stale
+          // `preferred_character_id` survives a birthday that moved the child
+          // into a group the character is not offered for.
+          const { rows: candidate } = await tx.query<{
+            slug: string;
+            display_name: string;
+            requires_paid_plan: boolean;
+            age_ok: boolean;
+          }>(
+            `select slug, display_name, requires_paid_plan,
                     ($2 = any(allowed_age_groups)) as age_ok
                from ai_characters
               where id = $1 and status in ('active','beta')`,
-              [characterId, context.age_group],
-            );
+            [characterId, context.age_group],
+          );
 
-            const character = candidate[0];
-            if (character?.age_ok !== true) {
-              throw validationFailed([
-                { field: 'characterId', issue: 'is not available for this age group' },
-              ]);
-            }
+          const character = candidate[0];
+          if (character?.age_ok !== true) {
+            throw validationFailed([
+              { field: 'characterId', issue: 'is not available for this age group' },
+            ]);
+          }
 
-            // A plan gate, never a safety gate. Personas differ in voice and
-            // manner only — every one of them runs the identical safety pipeline.
-            if (character.requires_paid_plan && entitlements.plan.tier !== 'paid') {
-              throw subscriptionRequired({
-                plan: entitlements.plan.plan_code,
-                requires: 'paid',
-                resource: 'character',
-              });
-            }
+          // A plan gate, never a safety gate. Personas differ in voice and
+          // manner only — every one of them runs the identical safety pipeline.
+          if (character.requires_paid_plan && entitlements.plan.tier !== 'paid') {
+            throw subscriptionRequired({
+              plan: entitlements.plan.plan_code,
+              requires: 'paid',
+              resource: 'character',
+            });
+          }
 
-            const language = request.body.language ?? context.primary_language;
-            const { rows: languageOk } = await tx.query<{ ok: boolean }>(
-              `select exists(
+          const language = request.body.language ?? context.primary_language;
+          const { rows: languageOk } = await tx.query<{ ok: boolean }>(
+            `select exists(
                select 1 from character_languages
                 where character_id = $1 and language_code = $2
              ) as ok`,
-              [characterId, language],
-            );
-            if (languageOk[0]?.ok !== true) {
-              throw validationFailed([
-                { field: 'language', issue: 'is not supported by this character' },
-              ]);
-            }
+            [characterId, language],
+          );
+          if (languageOk[0]?.ok !== true) {
+            throw validationFailed([
+              { field: 'language', issue: 'is not supported by this character' },
+            ]);
+          }
 
-            // This INSERT is what the consent RLS policy guards. If consent is
-            // missing the database refuses it, whatever this handler believes.
-            const { rows } = await tx.query<ConversationRow>(
-              `with created as (
+          // This INSERT is what the consent RLS policy guards. If consent is
+          // missing the database refuses it, whatever this handler believes.
+          const { rows } = await tx.query<ConversationRow>(
+            `with created as (
                insert into conversations (child_id, character_id, language_code, mode)
                values ($1, $2, $3, $4)
                returning *
              )
              select ${CONVERSATION_COLUMNS}
                from created cv join ai_characters ch on ch.id = cv.character_id`,
-              [childId, characterId, language, request.body.mode],
-            );
-
-            const conversation = rows[0];
-            if (!conversation) throw notFound();
-
-            return { conversation, entitlements };
-          });
-
-          await asSystem(db, async (tx) => {
-            await tx.query('select app.record_usage($1, 0, 0, 1)', [childId]);
-          });
-
-          await auditOrFail(
-            audit,
-            {
-              actorId: parentId,
-              actorType: 'parent',
-              action: 'conversation.started',
-              resourceType: 'conversation',
-              resourceId: created.conversation.id,
-              subjectChildId: childId,
-              outcome: 'success',
-              metadata: {
-                character: created.conversation.slug,
-                plan: created.entitlements.plan.plan_code,
-                mode: created.conversation.mode,
-              },
-            },
-            request,
+            [childId, characterId, language, request.body.mode],
           );
 
-          request.log.info(
-            {
-              requestId: request.requestId,
-              conversationId: created.conversation.id,
+          const conversation = rows[0];
+          if (!conversation) throw notFound();
+
+          return { conversation, entitlements };
+        });
+
+        await asSystem(db, async (tx) => {
+          await tx.query('select app.record_usage($1, 0, 0, 1)', [childId]);
+        });
+
+        await auditOrFail(
+          audit,
+          {
+            actorId: parentId,
+            actorType: 'parent',
+            action: 'conversation.started',
+            resourceType: 'conversation',
+            resourceId: created.conversation.id,
+            subjectChildId: childId,
+            outcome: 'success',
+            metadata: {
+              character: created.conversation.slug,
               plan: created.entitlements.plan.plan_code,
-              dailyTurnsUsed: created.entitlements.used,
-            },
-            'conversation started',
-          );
-
-          return await reply.status(201).send({
-            ...presentConversation(created.conversation),
-            limits: {
-              plan: created.entitlements.plan.plan_code,
-              dailyTurnLimit: created.entitlements.dailyTurnLimit,
-              dailyTurnsUsed: created.entitlements.used,
-              conversationTurnLimit: created.entitlements.plan.max_conversation_turns,
-              resetsAt: created.entitlements.resetsAt,
-            },
-          });
-        },
-      );
-
-      /* ---------------------------------------------------------------------- */
-      /* 2. POST /api/conversations/:id/message                                 */
-      /* ---------------------------------------------------------------------- */
-
-      app.post(
-        '/conversations/:conversationId/message',
-        {
-          onRequest: [app.authenticate],
-          preHandler: [app.authorize('conversations:read_own')],
-          schema: {
-            description: "Send a child's utterance and receive the companion's reply.",
-            params: z.object({ conversationId: z.uuid() }),
-            body: z.object({ text: z.string().min(1).max(1_000) }),
-            response: { 200: turnSchema },
-          },
-          config: {
-            rateLimit: {
-              max: options.messageRateLimitPerMinute,
-              timeWindow: '1 minute',
-              keyGenerator: perParent,
+              mode: created.conversation.mode,
             },
           },
-        },
-        async (request, reply) => {
-          const conversationId = request.params.conversationId;
-          const parentId = parentIdOf(request);
+          request,
+        );
 
-          /* --- Load, and resolve the quotas, inside one RLS-scoped read --- */
-          const loaded = await app.withParent(request, async (tx) => {
-            const { rows } = await tx.query<{
-              id: string;
-              child_id: string;
-              status: 'active' | 'ended' | 'flagged';
-              mode: 'chat' | 'story';
-              language_code: SupportedLanguage;
-              prompt_key: string | null;
-              message_count: number;
-              slug: string;
-              display_name: string;
-              description: string;
-              allowed_age_groups: AgeGroup[];
-              personality_traits: string[];
-              conversation_style: string;
-              vocabulary_style: string;
-              encouragement_style: string;
-              story_style: string;
-              greeting_style: string;
-              farewell_style: string;
-              educational_objectives: string[];
-            }>(
-              `select cv.id, cv.child_id, cv.status, cv.mode, cv.language_code,
+        request.log.info(
+          {
+            requestId: request.requestId,
+            conversationId: created.conversation.id,
+            plan: created.entitlements.plan.plan_code,
+            dailyTurnsUsed: created.entitlements.used,
+          },
+          'conversation started',
+        );
+
+        return await reply.status(201).send({
+          ...presentConversation(created.conversation),
+          limits: {
+            plan: created.entitlements.plan.plan_code,
+            dailyTurnLimit: created.entitlements.dailyTurnLimit,
+            dailyTurnsUsed: created.entitlements.used,
+            conversationTurnLimit: created.entitlements.plan.max_conversation_turns,
+            resetsAt: created.entitlements.resetsAt,
+          },
+        });
+      },
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* 2. POST /api/conversations/:id/message                                 */
+    /* ---------------------------------------------------------------------- */
+
+    app.post(
+      '/conversations/:conversationId/message',
+      {
+        onRequest: [app.authenticate],
+        preHandler: [app.authorize('conversations:read_own')],
+        schema: {
+          description: "Send a child's utterance and receive the companion's reply.",
+          params: z.object({ conversationId: z.uuid() }),
+          body: z.object({ text: z.string().min(1).max(1_000) }),
+          response: { 200: turnSchema },
+        },
+        config: {
+          rateLimit: {
+            max: options.messageRateLimitPerMinute,
+            timeWindow: '1 minute',
+            keyGenerator: perParent,
+          },
+        },
+      },
+      async (request, reply) => {
+        const conversationId = request.params.conversationId;
+        const parentId = parentIdOf(request);
+
+        /* --- Load, and resolve the quotas, inside one RLS-scoped read --- */
+        const loaded = await app.withParent(request, async (tx) => {
+          const { rows } = await tx.query<{
+            id: string;
+            child_id: string;
+            status: 'active' | 'ended' | 'flagged';
+            mode: 'chat' | 'story';
+            language_code: SupportedLanguage;
+            prompt_key: string | null;
+            message_count: number;
+            slug: string;
+            display_name: string;
+            description: string;
+            allowed_age_groups: AgeGroup[];
+            personality_traits: string[];
+            conversation_style: string;
+            vocabulary_style: string;
+            encouragement_style: string;
+            story_style: string;
+            greeting_style: string;
+            farewell_style: string;
+            educational_objectives: string[];
+          }>(
+            `select cv.id, cv.child_id, cv.status, cv.mode, cv.language_code,
                     ch.prompt_key, cv.message_count,
                     ch.slug, ch.display_name, ch.description, ch.allowed_age_groups,
                     ch.personality_traits, ch.conversation_style, ch.vocabulary_style,
@@ -798,295 +741,295 @@ export const conversationRoutes =
                from conversations cv
                join ai_characters ch on ch.id = cv.character_id
               where cv.id = $1`,
-              [conversationId],
-            );
+            [conversationId],
+          );
 
-            const conversation = rows[0];
-            if (!conversation) throw notFound();
-            if (conversation.status !== 'active') {
-              throw validationFailed([{ field: 'conversationId', issue: 'has already ended' }]);
-            }
+          const conversation = rows[0];
+          if (!conversation) throw notFound();
+          if (conversation.status !== 'active') {
+            throw validationFailed([{ field: 'conversationId', issue: 'has already ended' }]);
+          }
 
-            const context = await loadChildContext(tx, conversation.child_id);
-            if (!context) throw notFound();
+          const context = await loadChildContext(tx, conversation.child_id);
+          if (!context) throw notFound();
 
-            // The gate runs on EVERY turn, not only at the start. A session opened
-            // before the limit was reached must still stop when it is — otherwise
-            // "never end the conversation" is the bypass.
-            const { rows: elapsed } = await tx.query<{ seconds: number }>(
-              'select app.conversation_seconds($1) as seconds',
-              [conversationId],
-            );
-            const gate = await checkParentalGate(tx, conversation.child_id, options.clock, {
-              sessionSeconds: elapsed[0]?.seconds ?? 0,
-            });
+          // The gate runs on EVERY turn, not only at the start. A session opened
+          // before the limit was reached must still stop when it is — otherwise
+          // "never end the conversation" is the bypass.
+          const { rows: elapsed } = await tx.query<{ seconds: number }>(
+            'select app.conversation_seconds($1) as seconds',
+            [conversationId],
+          );
+          const gate = await checkParentalGate(tx, conversation.child_id, options.clock, {
+            sessionSeconds: elapsed[0]?.seconds ?? 0,
+          });
 
-            const entitlements = await loadEntitlements(
-              tx,
-              parentId,
-              conversation.child_id,
-              options.dailyTurnLimit,
-            );
+          const entitlements = await loadEntitlements(
+            tx,
+            parentId,
+            conversation.child_id,
+            options.dailyTurnLimit,
+          );
 
-            // The context window: the last N exchanges, oldest first.
-            const { rows: history } = await tx.query<{
-              role: 'child' | 'companion';
-              content_ciphertext: Buffer | string;
-              sequence: number;
-            }>(
-              `select role, content_ciphertext, sequence
+          // The context window: the last N exchanges, oldest first.
+          const { rows: history } = await tx.query<{
+            role: 'child' | 'companion';
+            content_ciphertext: Buffer | string;
+            sequence: number;
+          }>(
+            `select role, content_ciphertext, sequence
                from messages
               where conversation_id = $1 and status = 'delivered'
               order by sequence desc
               limit $2`,
-              [conversationId, options.maxExchanges * 2],
-            );
+            [conversationId, options.maxExchanges * 2],
+          );
 
-            return { conversation, context, entitlements, gate, history: history.reverse() };
-          });
+          return { conversation, context, entitlements, gate, history: history.reverse() };
+        });
 
-          const limits = {
-            plan: loaded.entitlements.plan.plan_code,
-            dailyTurnLimit: loaded.entitlements.dailyTurnLimit,
-            dailyTurnsUsed: loaded.entitlements.used,
-            conversationTurnLimit: loaded.entitlements.plan.max_conversation_turns,
-            resetsAt: loaded.entitlements.resetsAt,
-          };
+        const limits = {
+          plan: loaded.entitlements.plan.plan_code,
+          dailyTurnLimit: loaded.entitlements.dailyTurnLimit,
+          dailyTurnsUsed: loaded.entitlements.used,
+          conversationTurnLimit: loaded.entitlements.plan.max_conversation_turns,
+          resetsAt: loaded.entitlements.resetsAt,
+        };
 
-          /* --- Quotas --------------------------------------------------------
-           * A CHILD IS WAITING ON THIS RESPONSE, so a reached limit is a 200 with
-           * a warm goodbye and `status: 'ended'`, not a 429. A raw error here
-           * would surface to a five-year-old as a broken app, and the limit is not
-           * their mistake to understand (docs/ERROR_HANDLING.md §10).
-           *
-           * `/start` does return 429 for the same conditions — no child is
-           * listening at that point, and the client needs the machine-readable
-           * form to decide between "upgrade" and "come back tomorrow". The
-           * `limits` block below carries the same facts either way.
-           */
-          /* --- Parental controls ---------------------------------------------
-           * A CHILD IS WAITING, so this ends the session warmly rather than
-           * returning an error — the same reasoning as the quota path below. The
-           * PARENT sees the real reason on their dashboard; a child told "your
-           * parent blocked this" learns the rule is a person to argue with.
-           */
-          if (!loaded.gate.result.allowed) {
-            const denial = loaded.gate.result.denial ?? 'paused';
-            await endConversation(db, conversationId, 'parent_ended');
+        /* --- Quotas --------------------------------------------------------
+         * A CHILD IS WAITING ON THIS RESPONSE, so a reached limit is a 200 with
+         * a warm goodbye and `status: 'ended'`, not a 429. A raw error here
+         * would surface to a five-year-old as a broken app, and the limit is not
+         * their mistake to understand (docs/ERROR_HANDLING.md §10).
+         *
+         * `/start` does return 429 for the same conditions — no child is
+         * listening at that point, and the client needs the machine-readable
+         * form to decide between "upgrade" and "come back tomorrow". The
+         * `limits` block below carries the same facts either way.
+         */
+        /* --- Parental controls ---------------------------------------------
+         * A CHILD IS WAITING, so this ends the session warmly rather than
+         * returning an error — the same reasoning as the quota path below. The
+         * PARENT sees the real reason on their dashboard; a child told "your
+         * parent blocked this" learns the rule is a person to argue with.
+         */
+        if (!loaded.gate.result.allowed) {
+          const denial = loaded.gate.result.denial ?? 'paused';
+          await endConversation(db, conversationId, 'parent_ended');
 
-            await auditOrFail(
-              audit,
-              {
-                actorId: parentId,
-                actorType: 'system',
-                action: 'conversation.parental_limit_reached',
-                resourceType: 'conversation',
-                resourceId: conversationId,
-                subjectChildId: loaded.conversation.child_id,
-                outcome: 'denied',
-                metadata: { denial },
-              },
-              request,
-            );
-
-            return await reply.status(200).send({
-              reply: CHILD_FACING_MESSAGE[denial],
-              status: 'ended' as const,
-              conversationStatus: 'ended' as const,
-              messageId: null,
-              replyMessageId: null,
-              limits,
-            });
-          }
-
-          const turnsInConversation = Math.ceil(loaded.conversation.message_count / 2);
-          const overDaily = loaded.entitlements.used >= loaded.entitlements.dailyTurnLimit;
-          const overSession = turnsInConversation >= loaded.entitlements.plan.max_conversation_turns;
-
-          if (overDaily || overSession) {
-            await endConversation(db, conversationId, overDaily ? 'quota_exhausted' : 'child_ended');
-
-            await auditOrFail(
-              audit,
-              {
-                actorId: parentId,
-                actorType: 'system',
-                action: 'conversation.quota_exhausted',
-                resourceType: 'conversation',
-                resourceId: conversationId,
-                subjectChildId: loaded.conversation.child_id,
-                outcome: 'denied',
-                metadata: {
-                  scope: overDaily ? 'daily_turns' : 'conversation_turns',
-                  used: overDaily ? loaded.entitlements.used : turnsInConversation,
-                  limit: overDaily
-                    ? loaded.entitlements.dailyTurnLimit
-                    : loaded.entitlements.plan.max_conversation_turns,
-                  plan: loaded.entitlements.plan.plan_code,
-                },
-              },
-              request,
-            );
-
-            return await reply.status(200).send({
-              reply: overDaily
-                ? "That was so much fun! Let's talk again tomorrow."
-                : "What a lot we talked about! Let's start a fresh chat.",
-              status: 'ended' as const,
-              conversationStatus: 'ended' as const,
-              messageId: null,
-              replyMessageId: null,
-              limits,
-            });
-          }
-
-          // A row with a prompt_key uses the reviewed built-in it names; a row
-          // without one is composed from its trait selections. Neither path lets
-          // a row supply prompt text — see services/ai/src/character-traits.ts.
-          const config = characterConfigFrom(loaded.conversation);
-          const character = resolveCharacter({
-            promptKey: loaded.conversation.prompt_key,
-            ...(config === undefined ? {} : { config }),
-          });
-
-          if (!character) {
-            // Refused rather than substituted. Quietly swapping in another
-            // character would give a child a different companion without
-            // telling anyone.
-            throw validationFailed([
-              { field: 'conversationId', issue: 'uses a character that is no longer available' },
-            ]);
-          }
-
-          /* --- INPUT_SAFETY_CHECK → AI_GENERATION → OUTPUT_SAFETY_CHECK --- */
-          const turn = await engine.respond({
-            utterance: request.body.text,
-            // Generation only — moderation stays on the deployment's provider
-            // whatever a family chose. See RespondInput.provider.
-            provider: options.providers.resolve(loaded.context.ai_provider),
-            // Used for ONE thing: counting this child's recent stopped turns. It
-            // is never transmitted to a provider (see SafetySubject.childRef).
-            childRef: loaded.conversation.child_id,
-            parental: {
-              blockedTopics: loaded.context.blocked_topics,
-              storytellingEnabled: loaded.context.storytelling_enabled,
-              roleplayEnabled: loaded.context.roleplay_enabled,
+          await auditOrFail(
+            audit,
+            {
+              actorId: parentId,
+              actorType: 'system',
+              action: 'conversation.parental_limit_reached',
+              resourceType: 'conversation',
+              resourceId: conversationId,
+              subjectChildId: loaded.conversation.child_id,
+              outcome: 'denied',
+              metadata: { denial },
             },
-            context: {
-              childName: loaded.context.display_name,
-              ageGroup: loaded.context.age_group,
-              language: loaded.conversation.language_code,
-              character,
-              history: loaded.history.map((m): HistoryMessage => ({
-                role: m.role,
-                text: decodeContent(m.content_ciphertext),
-                sequence: m.sequence,
-              })),
-              /* ═══════════════════════════════════════════════════════════════
-               * THE PARENTAL CONTROL WINS OVER THE MODE, ALWAYS.
-               * ═══════════════════════════════════════════════════════════════
-               *
-               * Starting a story is refused when storytelling is off, so normally
-               * these cannot disagree. They can disagree in one window: a parent
-               * turns storytelling off while a story session is open. The control
-               * takes effect on the child's very next turn — the story stops
-               * being a story — rather than at the end of a session nobody is
-               * obliged to end.
-               */
-              storyMode: loaded.conversation.mode === 'story' && loaded.context.storytelling_enabled,
-              learningObjectives: loaded.context.topic_keys,
-              blockedTopics: loaded.context.blocked_topics,
-              contentRestrictions: [
-                ...(loaded.context.storytelling_enabled ? [] : ['Do not tell stories.']),
-                ...(loaded.context.roleplay_enabled
-                  ? []
-                  : ['Do not engage in pretend play or role-play.']),
-              ],
-              correctionStyle: loaded.context.correction_style,
-            },
-          });
+            request,
+          );
 
-          /* --- Persist both messages --- */
-          const persisted = await app.withParent(request, async (tx) => {
-            /**
-             * ═══════════════════════════════════════════════════════════════
-             * THE SEQUENCE IS ALLOCATED HERE, NOT BEFORE THE MODEL CALL.
+          return await reply.status(200).send({
+            reply: CHILD_FACING_MESSAGE[denial],
+            status: 'ended' as const,
+            conversationStatus: 'ended' as const,
+            messageId: null,
+            replyMessageId: null,
+            limits,
+          });
+        }
+
+        const turnsInConversation = Math.ceil(loaded.conversation.message_count / 2);
+        const overDaily = loaded.entitlements.used >= loaded.entitlements.dailyTurnLimit;
+        const overSession = turnsInConversation >= loaded.entitlements.plan.max_conversation_turns;
+
+        if (overDaily || overSession) {
+          await endConversation(db, conversationId, overDaily ? 'quota_exhausted' : 'child_ended');
+
+          await auditOrFail(
+            audit,
+            {
+              actorId: parentId,
+              actorType: 'system',
+              action: 'conversation.quota_exhausted',
+              resourceType: 'conversation',
+              resourceId: conversationId,
+              subjectChildId: loaded.conversation.child_id,
+              outcome: 'denied',
+              metadata: {
+                scope: overDaily ? 'daily_turns' : 'conversation_turns',
+                used: overDaily ? loaded.entitlements.used : turnsInConversation,
+                limit: overDaily
+                  ? loaded.entitlements.dailyTurnLimit
+                  : loaded.entitlements.plan.max_conversation_turns,
+                plan: loaded.entitlements.plan.plan_code,
+              },
+            },
+            request,
+          );
+
+          return await reply.status(200).send({
+            reply: overDaily
+              ? "That was so much fun! Let's talk again tomorrow."
+              : "What a lot we talked about! Let's start a fresh chat.",
+            status: 'ended' as const,
+            conversationStatus: 'ended' as const,
+            messageId: null,
+            replyMessageId: null,
+            limits,
+          });
+        }
+
+        // A row with a prompt_key uses the reviewed built-in it names; a row
+        // without one is composed from its trait selections. Neither path lets
+        // a row supply prompt text — see services/ai/src/character-traits.ts.
+        const config = characterConfigFrom(loaded.conversation);
+        const character = resolveCharacter({
+          promptKey: loaded.conversation.prompt_key,
+          ...(config === undefined ? {} : { config }),
+        });
+
+        if (!character) {
+          // Refused rather than substituted. Quietly swapping in another
+          // character would give a child a different companion without
+          // telling anyone.
+          throw validationFailed([
+            { field: 'conversationId', issue: 'uses a character that is no longer available' },
+          ]);
+        }
+
+        /* --- INPUT_SAFETY_CHECK → AI_GENERATION → OUTPUT_SAFETY_CHECK --- */
+        const turn = await engine.respond({
+          utterance: request.body.text,
+          // Generation only — moderation stays on the deployment's provider
+          // whatever a family chose. See RespondInput.provider.
+          provider: options.providers.resolve(loaded.context.ai_provider),
+          // Used for ONE thing: counting this child's recent stopped turns. It
+          // is never transmitted to a provider (see SafetySubject.childRef).
+          childRef: loaded.conversation.child_id,
+          parental: {
+            blockedTopics: loaded.context.blocked_topics,
+            storytellingEnabled: loaded.context.storytelling_enabled,
+            roleplayEnabled: loaded.context.roleplay_enabled,
+          },
+          context: {
+            childName: loaded.context.display_name,
+            ageGroup: loaded.context.age_group,
+            language: loaded.conversation.language_code,
+            character,
+            history: loaded.history.map((m): HistoryMessage => ({
+              role: m.role,
+              text: decodeContent(m.content_ciphertext),
+              sequence: m.sequence,
+            })),
+            /* ═══════════════════════════════════════════════════════════════
+             * THE PARENTAL CONTROL WINS OVER THE MODE, ALWAYS.
              * ═══════════════════════════════════════════════════════════════
              *
-             * `loaded.conversation.message_count` was read BEFORE the provider
-             * was called, and that call takes hundreds of milliseconds. Two
-             * turns in flight on the same conversation therefore both computed
-             * the same `nextSequence`, and the second insert died on
-             * `uq_messages_conversation_sequence` — a 500, which then told the
-             * client to retry the thing that just failed.
-             *
-             * That is not exotic: a child taps send twice, or the app retries
-             * on a flaky mobile connection while the first turn is still in
-             * flight — which ARCHITECTURE.md §7.3 explicitly expects it to do.
-             *
-             * `for update` locks the conversation row, so a concurrent turn
-             * waits for this one to commit and then reads the count it actually
-             * produced. The unique index was doing its job; it was the only
-             * thing standing between a stale read and a corrupted transcript
-             * order.
+             * Starting a story is refused when storytelling is off, so normally
+             * these cannot disagree. They can disagree in one window: a parent
+             * turns storytelling off while a story session is open. The control
+             * takes effect on the child's very next turn — the story stops
+             * being a story — rather than at the end of a session nobody is
+             * obliged to end.
              */
-            const { rows: counterRows } = await tx.query<{ message_count: number }>(
-              'select message_count from conversations where id = $1 for update',
-              [conversationId],
-            );
-            const nextSequence = counterRows[0]?.message_count ?? loaded.conversation.message_count;
+            storyMode: loaded.conversation.mode === 'story' && loaded.context.storytelling_enabled,
+            learningObjectives: loaded.context.topic_keys,
+            blockedTopics: loaded.context.blocked_topics,
+            contentRestrictions: [
+              ...(loaded.context.storytelling_enabled ? [] : ['Do not tell stories.']),
+              ...(loaded.context.roleplay_enabled
+                ? []
+                : ['Do not engage in pretend play or role-play.']),
+            ],
+            correctionStyle: loaded.context.correction_style,
+          },
+        });
 
-            const { rows: childRows } = await tx.query<{ id: string }>(
-              `insert into messages
+        /* --- Persist both messages --- */
+        const persisted = await app.withParent(request, async (tx) => {
+          /**
+           * ═══════════════════════════════════════════════════════════════
+           * THE SEQUENCE IS ALLOCATED HERE, NOT BEFORE THE MODEL CALL.
+           * ═══════════════════════════════════════════════════════════════
+           *
+           * `loaded.conversation.message_count` was read BEFORE the provider
+           * was called, and that call takes hundreds of milliseconds. Two
+           * turns in flight on the same conversation therefore both computed
+           * the same `nextSequence`, and the second insert died on
+           * `uq_messages_conversation_sequence` — a 500, which then told the
+           * client to retry the thing that just failed.
+           *
+           * That is not exotic: a child taps send twice, or the app retries
+           * on a flaky mobile connection while the first turn is still in
+           * flight — which ARCHITECTURE.md §7.3 explicitly expects it to do.
+           *
+           * `for update` locks the conversation row, so a concurrent turn
+           * waits for this one to commit and then reads the count it actually
+           * produced. The unique index was doing its job; it was the only
+           * thing standing between a stale read and a corrupted transcript
+           * order.
+           */
+          const { rows: counterRows } = await tx.query<{ message_count: number }>(
+            'select message_count from conversations where id = $1 for update',
+            [conversationId],
+          );
+          const nextSequence = counterRows[0]?.message_count ?? loaded.conversation.message_count;
+
+          const { rows: childRows } = await tx.query<{ id: string }>(
+            `insert into messages
                (conversation_id, child_id, role, sequence, content_ciphertext, content_key_id,
                 content_length, status)
              values ($1, $2, 'child', $3, $4, $5, $6, $7)
              returning id`,
-              [
-                conversationId,
-                loaded.conversation.child_id,
-                nextSequence,
-                encodeContent(request.body.text),
-                options.encryptionKeyId,
-                request.body.text.length,
-                turn.status === 'ok' ? 'delivered' : 'blocked',
-              ],
-            );
-            const childMessageId = childRows[0]?.id ?? null;
+            [
+              conversationId,
+              loaded.conversation.child_id,
+              nextSequence,
+              encodeContent(request.body.text),
+              options.encryptionKeyId,
+              request.body.text.length,
+              turn.status === 'ok' ? 'delivered' : 'blocked',
+            ],
+          );
+          const childMessageId = childRows[0]?.id ?? null;
 
-            let replyMessageId: string | null = null;
-            if (turn.status === 'ok') {
-              const { rows: replyRows } = await tx.query<{ id: string }>(
-                `insert into messages
+          let replyMessageId: string | null = null;
+          if (turn.status === 'ok') {
+            const { rows: replyRows } = await tx.query<{ id: string }>(
+              `insert into messages
                  (conversation_id, child_id, role, sequence, content_ciphertext, content_key_id,
                   content_length, status, provider, model, input_tokens, output_tokens, cost_usd,
                   safety_layers_passed)
                values ($1, $2, 'companion', $3, $4, $5, $6, 'delivered', $7, $8, $9, $10, $11, $12)
                returning id`,
-                [
-                  conversationId,
-                  loaded.conversation.child_id,
-                  nextSequence + 1,
-                  encodeContent(turn.replyForStorage),
-                  options.encryptionKeyId,
-                  turn.replyForStorage.length,
-                  turn.provider,
-                  turn.model,
-                  turn.usage.inputTokens,
-                  turn.usage.outputTokens,
-                  turn.usage.estimatedCostUsd,
-                  turn.layersPassed,
-                ],
-              );
-              replyMessageId = replyRows[0]?.id ?? null;
-            }
+              [
+                conversationId,
+                loaded.conversation.child_id,
+                nextSequence + 1,
+                encodeContent(turn.replyForStorage),
+                options.encryptionKeyId,
+                turn.replyForStorage.length,
+                turn.provider,
+                turn.model,
+                turn.usage.inputTokens,
+                turn.usage.outputTokens,
+                turn.usage.estimatedCostUsd,
+                turn.layersPassed,
+              ],
+            );
+            replyMessageId = replyRows[0]?.id ?? null;
+          }
 
-            const advance = turn.status === 'ok' ? 2 : 1;
-            // The conversation row is the per-session ledger: none of these columns
-            // is returned by the API, and all of them are what answers "what did
-            // this session cost and how much context did the model actually see?".
-            await tx.query(
-              `update conversations
+          const advance = turn.status === 'ok' ? 2 : 1;
+          // The conversation row is the per-session ledger: none of these columns
+          // is returned by the API, and all of them are what answers "what did
+          // this session cost and how much context did the model actually see?".
+          await tx.query(
+            `update conversations
                 set message_count = message_count + $2,
                     total_input_tokens = total_input_tokens + $3,
                     total_output_tokens = total_output_tokens + $4,
@@ -1102,310 +1045,310 @@ export const conversationRoutes =
                     ended_at = case when $10 then now() else ended_at end,
                     end_reason = case when $10 then 'safety_ended' else end_reason end
               where id = $1`,
-              [
-                conversationId,
-                advance,
-                turn.usage.inputTokens,
-                turn.usage.outputTokens,
-                turn.usage.estimatedCostUsd,
-                turn.contextMessageCount,
-                turn.provider,
-                turn.model,
-                turn.escalation,
-                turn.status === 'ended',
-              ],
-            );
-
-            return { childMessageId, replyMessageId };
-          });
-
-          /* --- Progress ------------------------------------------------------
-           * Keyed on the message id, so a retried request cannot count the same
-           * turn twice. Only the WORD COUNT travels; the utterance does not. */
-          if (persisted.childMessageId !== null) {
-            await options.learning?.turn({
-              childId: loaded.conversation.child_id,
+            [
               conversationId,
-              messageId: persisted.childMessageId,
-              wordCount: wordCountOf(request.body.text),
-            });
-          }
-
-          /* --- Usage, and the safety events ---------------------------------
-           * Both under the SYSTEM context. `usage_daily` and `content_flags` are
-           * SELECT-only for a parent by design — a parent must be able to see
-           * their usage and their child's flags, and able to alter neither.
-           */
-          await asSystem(db, async (tx) => {
-            await tx.query('select app.record_usage($1, 1, $2, 0, $3, $4, $5)', [
-              loaded.conversation.child_id,
-              turn.status === 'ok' ? 0 : 1,
+              advance,
               turn.usage.inputTokens,
               turn.usage.outputTokens,
               turn.usage.estimatedCostUsd,
-            ]);
+              turn.contextMessageCount,
+              turn.provider,
+              turn.model,
+              turn.escalation,
+              turn.status === 'ended',
+            ],
+          );
 
-            for (const record of turn.safetyRecords) {
-              if (record.decision === 'allowed') continue;
-              await tx.query(
-                `insert into content_flags
+          return { childMessageId, replyMessageId };
+        });
+
+        /* --- Progress ------------------------------------------------------
+         * Keyed on the message id, so a retried request cannot count the same
+         * turn twice. Only the WORD COUNT travels; the utterance does not. */
+        if (persisted.childMessageId !== null) {
+          await options.learning?.turn({
+            childId: loaded.conversation.child_id,
+            conversationId,
+            messageId: persisted.childMessageId,
+            wordCount: wordCountOf(request.body.text),
+          });
+        }
+
+        /* --- Usage, and the safety events ---------------------------------
+         * Both under the SYSTEM context. `usage_daily` and `content_flags` are
+         * SELECT-only for a parent by design — a parent must be able to see
+         * their usage and their child's flags, and able to alter neither.
+         */
+        await asSystem(db, async (tx) => {
+          await tx.query('select app.record_usage($1, 1, $2, 0, $3, $4, $5)', [
+            loaded.conversation.child_id,
+            turn.status === 'ok' ? 0 : 1,
+            turn.usage.inputTokens,
+            turn.usage.outputTokens,
+            turn.usage.estimatedCostUsd,
+          ]);
+
+          for (const record of turn.safetyRecords) {
+            if (record.decision === 'allowed') continue;
+            await tx.query(
+              `insert into content_flags
                  (child_id, message_id, conversation_id, layer, decision, categories,
                   severity, confidence, detector, policy_version, action_taken, attempt_index)
                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-                [
-                  loaded.conversation.child_id,
-                  persisted.childMessageId,
-                  conversationId,
-                  record.layer,
-                  record.decision,
-                  record.categories,
-                  record.decision === 'escalated' ? 'critical' : 'high',
-                  record.confidence,
-                  // Rule NAMES, never the text that matched them.
-                  record.detectors.join(',') || null,
-                  record.policyVersion,
-                  record.actionTaken,
-                  record.attemptIndex,
-                ],
-              );
-            }
-          });
-
-          if (turn.escalation) {
-            /* An escalation is not merely a block. docs/CHILD_SAFETY.md §6.1
-             * item 5 requires it to be RECORDED and ROUTED to a human path.
-             *
-             * The audit entry below is the record. `options.escalations` is the
-             * routing: it writes a durable delivery row and then attempts the
-             * webhook without the child's turn waiting on it. WHO reads that
-             * endpoint is Q-07 and is not decided here. */
-            await auditOrFail(
-              audit,
-              {
-                actorType: 'system',
-                action: 'safety.escalation.raised',
-                resourceType: 'conversation',
-                resourceId: conversationId,
-                subjectChildId: loaded.conversation.child_id,
-                outcome: 'success',
-                metadata: {
-                  layers: turn.safetyRecords.map((r) => r.layer),
-                  reason: turn.escalationReason ?? 'unspecified',
-                  categories: turn.safetyRecords.flatMap((r) => r.categories),
-                  requiresHumanReview: true,
-                },
-              },
-              request,
-            );
-            request.log.warn(
-              { requestId: request.requestId, conversationId },
-              'safety escalation raised — human review required',
-            );
-
-            if (options.escalations === undefined) {
-              /* Never silent. §6.1 item 1: a disclosure must never be swallowed,
-               * and "nobody was told" is a form of swallowing it. */
-              request.log.error(
-                { requestId: request.requestId, control: 'safety_escalation_delivery' },
-                'safety escalation NOT routed: no delivery configured',
-              );
-            } else {
-              await options.escalations.record({
-                childId: loaded.conversation.child_id,
+              [
+                loaded.conversation.child_id,
+                persisted.childMessageId,
                 conversationId,
-                reason: escalationReasonCode(turn.escalationReason),
-                // Deduplicated: several layers commonly flag the same category,
-                // and a reviewer wants the set, not the tally.
-                categories: [...new Set(turn.safetyRecords.flatMap((r) => r.categories))],
-                severity: 'critical',
-              });
-            }
+                record.layer,
+                record.decision,
+                record.categories,
+                record.decision === 'escalated' ? 'critical' : 'high',
+                record.confidence,
+                // Rule NAMES, never the text that matched them.
+                record.detectors.join(',') || null,
+                record.policyVersion,
+                record.actionTaken,
+                record.attemptIndex,
+              ],
+            );
           }
+        });
 
-          /* The alert conditions' producer. A blocked turn is the pipeline
-           * working and must never page anybody; `safety_unavailable` is the
-           * pipeline failing closed, and pages on the first one. */
-          options.health?.record({ status: turn.status, degradedReason: turn.degradedReason });
-
-          // Structured, and content-free. `turn.status` and the layer names are
-          // safe to log; the utterance and the reply are not, ever
-          // (docs/LOGGING.md §2).
-          request.log.info(
+        if (turn.escalation) {
+          /* An escalation is not merely a block. docs/CHILD_SAFETY.md §6.1
+           * item 5 requires it to be RECORDED and ROUTED to a human path.
+           *
+           * The audit entry below is the record. `options.escalations` is the
+           * routing: it writes a durable delivery row and then attempts the
+           * webhook without the child's turn waiting on it. WHO reads that
+           * endpoint is Q-07 and is not decided here. */
+          await auditOrFail(
+            audit,
             {
-              requestId: request.requestId,
-              conversationId,
-              turnStatus: turn.status,
-              layersPassed: turn.layersPassed,
-              degradedReason: turn.degradedReason,
-              inputTokens: turn.usage.inputTokens,
-              outputTokens: turn.usage.outputTokens,
+              actorType: 'system',
+              action: 'safety.escalation.raised',
+              resourceType: 'conversation',
+              resourceId: conversationId,
+              subjectChildId: loaded.conversation.child_id,
+              outcome: 'success',
+              metadata: {
+                layers: turn.safetyRecords.map((r) => r.layer),
+                reason: turn.escalationReason ?? 'unspecified',
+                categories: turn.safetyRecords.flatMap((r) => r.categories),
+                requiresHumanReview: true,
+              },
             },
-            'conversation turn completed',
+            request,
+          );
+          request.log.warn(
+            { requestId: request.requestId, conversationId },
+            'safety escalation raised — human review required',
           );
 
-          return await reply.status(200).send({
-            reply: turn.reply,
-            status: turn.status,
-            conversationStatus:
-              turn.status === 'ended'
-                ? ('ended' as const)
-                : turn.escalation
-                  ? ('flagged' as const)
-                  : ('active' as const),
-            messageId: persisted.childMessageId,
-            replyMessageId: persisted.replyMessageId,
-            limits: { ...limits, dailyTurnsUsed: loaded.entitlements.used + 1 },
-          });
-        },
-      );
+          if (options.escalations === undefined) {
+            /* Never silent. §6.1 item 1: a disclosure must never be swallowed,
+             * and "nobody was told" is a form of swallowing it. */
+            request.log.error(
+              { requestId: request.requestId, control: 'safety_escalation_delivery' },
+              'safety escalation NOT routed: no delivery configured',
+            );
+          } else {
+            await options.escalations.record({
+              childId: loaded.conversation.child_id,
+              conversationId,
+              reason: escalationReasonCode(turn.escalationReason),
+              // Deduplicated: several layers commonly flag the same category,
+              // and a reviewer wants the set, not the tally.
+              categories: [...new Set(turn.safetyRecords.flatMap((r) => r.categories))],
+              severity: 'critical',
+            });
+          }
+        }
 
-      /* ---------------------------------------------------------------------- */
-      /* 3. GET /api/conversations?childId=…                                    */
-      /* ---------------------------------------------------------------------- */
-      /* Not in the four-endpoint specification, but the dashboard cannot page    */
-      /* through a child's history without it, and it was already shipped under   */
-      /* the previous path. Kept, rather than silently dropped.                   */
+        /* The alert conditions' producer. A blocked turn is the pipeline
+         * working and must never page anybody; `safety_unavailable` is the
+         * pipeline failing closed, and pages on the first one. */
+        options.health?.record({ status: turn.status, degradedReason: turn.degradedReason });
 
-      app.get(
-        '/conversations',
-        {
-          onRequest: [app.authenticate],
-          preHandler: [app.authorize('conversations:read_own')],
-          schema: {
-            description: "A child's conversations, most recent first. No message bodies.",
-            querystring: z.object({
-              childId: z.uuid(),
-              limit: z.coerce.number().int().min(1).max(100).default(20),
-            }),
-            response: { 200: z.object({ items: z.array(conversationSchema) }) },
+        // Structured, and content-free. `turn.status` and the layer names are
+        // safe to log; the utterance and the reply are not, ever
+        // (docs/LOGGING.md §2).
+        request.log.info(
+          {
+            requestId: request.requestId,
+            conversationId,
+            turnStatus: turn.status,
+            layersPassed: turn.layersPassed,
+            degradedReason: turn.degradedReason,
+            inputTokens: turn.usage.inputTokens,
+            outputTokens: turn.usage.outputTokens,
           },
-        },
-        async (request, reply) => {
-          const items = await app.withParent(request, async (tx) => {
-            await requireChildOwnership(tx, request.query.childId);
+          'conversation turn completed',
+        );
 
-            const { rows } = await tx.query<ConversationRow>(
-              `select ${CONVERSATION_COLUMNS}
+        return await reply.status(200).send({
+          reply: turn.reply,
+          status: turn.status,
+          conversationStatus:
+            turn.status === 'ended'
+              ? ('ended' as const)
+              : turn.escalation
+                ? ('flagged' as const)
+                : ('active' as const),
+          messageId: persisted.childMessageId,
+          replyMessageId: persisted.replyMessageId,
+          limits: { ...limits, dailyTurnsUsed: loaded.entitlements.used + 1 },
+        });
+      },
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* 3. GET /api/conversations?childId=…                                    */
+    /* ---------------------------------------------------------------------- */
+    /* Not in the four-endpoint specification, but the dashboard cannot page    */
+    /* through a child's history without it, and it was already shipped under   */
+    /* the previous path. Kept, rather than silently dropped.                   */
+
+    app.get(
+      '/conversations',
+      {
+        onRequest: [app.authenticate],
+        preHandler: [app.authorize('conversations:read_own')],
+        schema: {
+          description: "A child's conversations, most recent first. No message bodies.",
+          querystring: z.object({
+            childId: z.uuid(),
+            limit: z.coerce.number().int().min(1).max(100).default(20),
+          }),
+          response: { 200: z.object({ items: z.array(conversationSchema) }) },
+        },
+      },
+      async (request, reply) => {
+        const items = await app.withParent(request, async (tx) => {
+          await requireChildOwnership(tx, request.query.childId);
+
+          const { rows } = await tx.query<ConversationRow>(
+            `select ${CONVERSATION_COLUMNS}
                from conversations cv
                join ai_characters ch on ch.id = cv.character_id
               where cv.child_id = $1
               order by cv.started_at desc
               limit $2`,
-              [request.query.childId, request.query.limit],
-            );
-            return rows;
-          });
+            [request.query.childId, request.query.limit],
+          );
+          return rows;
+        });
 
-          return await reply.status(200).send({ items: items.map(presentConversation) });
+        return await reply.status(200).send({ items: items.map(presentConversation) });
+      },
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* 4. GET /api/conversations/:id                                          */
+    /* ---------------------------------------------------------------------- */
+
+    app.get(
+      '/conversations/:conversationId',
+      {
+        onRequest: [app.authenticate],
+        preHandler: [app.authorize('conversations:read_own')],
+        schema: {
+          description: 'One conversation with its messages. The parent oversight surface.',
+          params: z.object({ conversationId: z.uuid() }),
+          response: { 200: conversationSchema.extend({ messages: z.array(messageSchema) }) },
         },
-      );
-
-      /* ---------------------------------------------------------------------- */
-      /* 4. GET /api/conversations/:id                                          */
-      /* ---------------------------------------------------------------------- */
-
-      app.get(
-        '/conversations/:conversationId',
-        {
-          onRequest: [app.authenticate],
-          preHandler: [app.authorize('conversations:read_own')],
-          schema: {
-            description: 'One conversation with its messages. The parent oversight surface.',
-            params: z.object({ conversationId: z.uuid() }),
-            response: { 200: conversationSchema.extend({ messages: z.array(messageSchema) }) },
-          },
-        },
-        async (request, reply) => {
-          const result = await app.withParent(request, async (tx) => {
-            // RLS restricts `conversations` to the caller's children, so a
-            // conversation belonging to another family returns zero rows here —
-            // which becomes a 404, not a 403. A 403 would confirm it exists.
-            const { rows } = await tx.query<ConversationRow>(
-              `select ${CONVERSATION_COLUMNS}
+      },
+      async (request, reply) => {
+        const result = await app.withParent(request, async (tx) => {
+          // RLS restricts `conversations` to the caller's children, so a
+          // conversation belonging to another family returns zero rows here —
+          // which becomes a 404, not a 403. A 403 would confirm it exists.
+          const { rows } = await tx.query<ConversationRow>(
+            `select ${CONVERSATION_COLUMNS}
                from conversations cv
                join ai_characters ch on ch.id = cv.character_id
               where cv.id = $1`,
-              [request.params.conversationId],
-            );
+            [request.params.conversationId],
+          );
 
-            const conversation = rows[0];
-            if (!conversation) throw notFound();
+          const conversation = rows[0];
+          if (!conversation) throw notFound();
 
-            // Stored replies keep the {{name}} placeholder, so the name is never in
-            // the transcript and never replays into a provider call. It is
-            // substituted here, at presentation time.
-            const { rows: child } = await tx.query<{ display_name: string }>(
-              'select display_name from children where id = $1',
-              [conversation.child_id],
-            );
-            const childName = child[0]?.display_name ?? '';
+          // Stored replies keep the {{name}} placeholder, so the name is never in
+          // the transcript and never replays into a provider call. It is
+          // substituted here, at presentation time.
+          const { rows: child } = await tx.query<{ display_name: string }>(
+            'select display_name from children where id = $1',
+            [conversation.child_id],
+          );
+          const childName = child[0]?.display_name ?? '';
 
-            const { rows: messages } = await tx.query<{
-              id: string;
-              role: 'child' | 'companion';
-              sequence: number;
-              content_ciphertext: Buffer | string;
-              status: 'delivered' | 'blocked' | 'redacted';
-              redacted_at: string | null;
-              created_at: string;
-            }>(
-              `select id, role, sequence, content_ciphertext, status, redacted_at, created_at
+          const { rows: messages } = await tx.query<{
+            id: string;
+            role: 'child' | 'companion';
+            sequence: number;
+            content_ciphertext: Buffer | string;
+            status: 'delivered' | 'blocked' | 'redacted';
+            redacted_at: string | null;
+            created_at: string;
+          }>(
+            `select id, role, sequence, content_ciphertext, status, redacted_at, created_at
                from messages where conversation_id = $1 order by sequence`,
-              [request.params.conversationId],
-            );
+            [request.params.conversationId],
+          );
 
-            return { conversation, messages, childName };
-          });
+          return { conversation, messages, childName };
+        });
 
-          return await reply.status(200).send({
-            ...presentConversation(result.conversation),
-            messages: result.messages.map((m) => ({
-              id: m.id,
-              role: m.role,
-              sequence: m.sequence,
-              /* A redacted message returns an empty string, not the empty
-               * ciphertext decoded into one by accident. The distinction matters
-               * to whoever renders this: "" reads as a bug, and `redactedAt`
-               * with it reads as the retention policy doing what it promised. */
-              text:
-                m.redacted_at === null
-                  ? substituteName(decodeContent(m.content_ciphertext), result.childName)
-                  : '',
-              status: m.status,
-              redactedAt: m.redacted_at === null ? null : new Date(m.redacted_at).toISOString(),
-              createdAt: new Date(m.created_at).toISOString(),
-            })),
-          });
+        return await reply.status(200).send({
+          ...presentConversation(result.conversation),
+          messages: result.messages.map((m) => ({
+            id: m.id,
+            role: m.role,
+            sequence: m.sequence,
+            /* A redacted message returns an empty string, not the empty
+             * ciphertext decoded into one by accident. The distinction matters
+             * to whoever renders this: "" reads as a bug, and `redactedAt`
+             * with it reads as the retention policy doing what it promised. */
+            text:
+              m.redacted_at === null
+                ? substituteName(decodeContent(m.content_ciphertext), result.childName)
+                : '',
+            status: m.status,
+            redactedAt: m.redacted_at === null ? null : new Date(m.redacted_at).toISOString(),
+            createdAt: new Date(m.created_at).toISOString(),
+          })),
+        });
+      },
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* 5. POST /api/conversations/:id/end                                     */
+    /* ---------------------------------------------------------------------- */
+
+    app.post(
+      '/conversations/:conversationId/end',
+      {
+        onRequest: [app.authenticate],
+        preHandler: [app.authorize('conversations:read_own')],
+        schema: {
+          description: 'End a conversation. Idempotent.',
+          params: z.object({ conversationId: z.uuid() }),
+          body: z.object({
+            reason: z
+              .enum(['child_ended', 'parent_ended', 'timeout', 'quota_exhausted'])
+              .default('child_ended'),
+          }),
+          response: { 200: conversationSchema },
         },
-      );
-
-      /* ---------------------------------------------------------------------- */
-      /* 5. POST /api/conversations/:id/end                                     */
-      /* ---------------------------------------------------------------------- */
-
-      app.post(
-        '/conversations/:conversationId/end',
-        {
-          onRequest: [app.authenticate],
-          preHandler: [app.authorize('conversations:read_own')],
-          schema: {
-            description: 'End a conversation. Idempotent.',
-            params: z.object({ conversationId: z.uuid() }),
-            body: z.object({
-              reason: z
-                .enum(['child_ended', 'parent_ended', 'timeout', 'quota_exhausted'])
-                .default('child_ended'),
-            }),
-            response: { 200: conversationSchema },
-          },
-        },
-        async (request, reply) => {
-          const ended = await app.withParent(request, async (tx) => {
-            // `coalesce` on both columns is what makes this idempotent: ending an
-            // already-ended conversation returns it unchanged rather than
-            // rewriting when and why it ended.
-            const { rows } = await tx.query<ConversationRow>(
-              `with updated as (
+      },
+      async (request, reply) => {
+        const ended = await app.withParent(request, async (tx) => {
+          // `coalesce` on both columns is what makes this idempotent: ending an
+          // already-ended conversation returns it unchanged rather than
+          // rewriting when and why it ended.
+          const { rows } = await tx.query<ConversationRow>(
+            `with updated as (
                update conversations
                   set status = case when status = 'flagged' then 'flagged' else 'ended' end,
                       ended_at = coalesce(ended_at, now()),
@@ -1415,51 +1358,51 @@ export const conversationRoutes =
              )
              select ${CONVERSATION_COLUMNS}
                from updated cv join ai_characters ch on ch.id = cv.character_id`,
-              [request.params.conversationId, request.body.reason],
-            );
-
-            const conversation = rows[0];
-            if (!conversation) throw notFound();
-            return conversation;
-          });
-
-          await auditOrFail(
-            audit,
-            {
-              actorId: request.principal?.parentId,
-              actorType: 'parent',
-              action: 'conversation.ended',
-              resourceType: 'conversation',
-              resourceId: ended.id,
-              subjectChildId: ended.child_id,
-              outcome: 'success',
-              metadata: { reason: ended.end_reason },
-            },
-            request,
+            [request.params.conversationId, request.body.reason],
           );
 
-          /* The session is over, so nothing is waiting on the aggregation — which
-           * is why this is where the day's rollup gets rebuilt. A parent opening
-           * the dashboard after a chat sees that chat. */
-          const { rows: seconds } = await app.withParent(
-            request,
-            async (tx) =>
-              await tx.query<{ seconds: number }>('select app.conversation_seconds($1) as seconds', [
-                ended.id,
-              ]),
-          );
+          const conversation = rows[0];
+          if (!conversation) throw notFound();
+          return conversation;
+        });
 
-          await options.learning?.conversationEnded({
-            childId: ended.child_id,
-            conversationId: ended.id,
-            seconds: seconds[0]?.seconds ?? 0,
-            storyCompleted: isCompletedStory(ended),
-          });
+        await auditOrFail(
+          audit,
+          {
+            actorId: request.principal?.parentId,
+            actorType: 'parent',
+            action: 'conversation.ended',
+            resourceType: 'conversation',
+            resourceId: ended.id,
+            subjectChildId: ended.child_id,
+            outcome: 'success',
+            metadata: { reason: ended.end_reason },
+          },
+          request,
+        );
 
-          return await reply.status(200).send(presentConversation(ended));
-        },
-      );
-    };
+        /* The session is over, so nothing is waiting on the aggregation — which
+         * is why this is where the day's rollup gets rebuilt. A parent opening
+         * the dashboard after a chat sees that chat. */
+        const { rows: seconds } = await app.withParent(
+          request,
+          async (tx) =>
+            await tx.query<{ seconds: number }>('select app.conversation_seconds($1) as seconds', [
+              ended.id,
+            ]),
+        );
+
+        await options.learning?.conversationEnded({
+          childId: ended.child_id,
+          conversationId: ended.id,
+          seconds: seconds[0]?.seconds ?? 0,
+          storyCompleted: isCompletedStory(ended),
+        });
+
+        return await reply.status(200).send(presentConversation(ended));
+      },
+    );
+  };
 
 /**
  * Ends a conversation as the system.

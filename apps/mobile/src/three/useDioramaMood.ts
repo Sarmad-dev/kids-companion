@@ -3,7 +3,7 @@ import { useMemo, useRef } from 'react';
 import type * as THREE from 'three';
 
 import type { CharacterRig } from './character-rig';
-import { BLINK_SECONDS, MOODS, MOUTH_HZ, type Mood } from './moods';
+import { BLINK_SECONDS, MOODS, MOUTH_ENVELOPE_HZ, MOUTH_HZ, type Mood } from './moods';
 
 /**
  * Drives one character rig from one mood, every frame.
@@ -86,6 +86,9 @@ interface RestPose {
   mouthRotX: number;
   mouthScaleY: number;
   rootY: number;
+  rootX: number;
+  rootZ: number;
+  rootRotY: number;
 }
 
 const pick = (
@@ -176,6 +179,9 @@ export const useResolvedRigMood = (rig: RigNodes, mood: Mood, still: boolean): v
       mouthRotX: resolved.mouth?.rotation.x ?? 0,
       mouthScaleY: resolved.mouth?.scale.y ?? 1,
       rootY: resolved.root?.position.y ?? 0,
+      rootX: resolved.root?.position.x ?? 0,
+      rootZ: resolved.root?.position.z ?? 0,
+      rootRotY: resolved.root?.rotation.y ?? 0,
     };
     const R = rest.current;
 
@@ -235,12 +241,22 @@ export const useResolvedRigMood = (rig: RigNodes, mood: Mood, still: boolean): v
 
     /* ---- mouth ------------------------------------------------------------ */
     if (resolved.mouth) {
+      /* Two terms, not one: the fast one is the syllable, the slow one is how
+       * much of it is said. See MOUTH_ENVELOPE_HZ. Floored at 0.35 so the mouth
+       * never fully stops mid-sentence, which would read as the audio cutting
+       * out rather than as an unstressed syllable. */
+      const stress = 0.35 + 0.65 * Math.abs(Math.sin(t * MOUTH_ENVELOPE_HZ));
       if (resolved.mouthHinges) {
         resolved.mouth.rotation.x = M.mouth
-          ? R.mouthRotX + (still ? 0.28 : 0.1 + 0.34 * Math.abs(Math.sin(t * (MOUTH_HZ + 0.4))))
+          ? R.mouthRotX +
+            (still ? 0.28 : 0.1 + 0.42 * stress * Math.abs(Math.sin(t * (MOUTH_HZ + 0.4))))
           : R.mouthRotX + 0.02;
       } else {
-        const open = M.mouth ? (still ? 2.1 : 1 + 2.4 * Math.abs(Math.sin(t * MOUTH_HZ))) : 1;
+        const open = M.mouth
+          ? still
+            ? 2.1
+            : 1 + 3.0 * stress * Math.abs(Math.sin(t * MOUTH_HZ))
+          : 1;
         resolved.mouth.scale.y = R.mouthScaleY * open;
       }
     }
@@ -278,6 +294,27 @@ export const useResolvedRigMood = (rig: RigNodes, mood: Mood, still: boolean): v
           : // A wag is twice the limb rate and much wider — it is the one part
             // of a dog that a child watches for.
             Math.sin(t * (TWO_PI / Math.max(0.5, M.limbPeriod * 0.5))) * M.limb * 1.6);
+    }
+
+    /* ---- the whole character, drifting around its spot ------------------- */
+    if (resolved.root) {
+      if (still) {
+        // Reduce Motion holds the POSE, so the drift collapses to its own
+        // starting value rather than to a different place every mood change.
+        resolved.root.position.x = R.rootX;
+        resolved.root.position.z = R.rootZ;
+        resolved.root.rotation.y = R.rootRotY;
+      } else {
+        const period = Math.max(0.5, M.wanderPeriod);
+        // Two incommensurate periods on x and z, so the path is a slow figure
+        // rather than a line the character paces back and forth along.
+        const phase = t * (TWO_PI / period);
+        resolved.root.position.x = R.rootX + Math.sin(phase) * M.wander;
+        resolved.root.position.z = R.rootZ + Math.sin(phase * 0.61 + 1.1) * M.wander * 0.55;
+        // It turns to follow where it is going, at a fraction of the angle —
+        // enough to read as intent, not enough to ever show the child a back.
+        resolved.root.rotation.y = R.rootRotY + Math.sin(phase + 0.5) * M.wander * 1.6;
+      }
     }
 
     if (resolved.hovers && resolved.root) {

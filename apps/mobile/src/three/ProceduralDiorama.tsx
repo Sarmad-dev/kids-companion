@@ -1,4 +1,4 @@
-import { Canvas } from '@react-three/fiber/native';
+import { Canvas, useFrame } from '@react-three/fiber/native';
 import { useMemo } from 'react';
 import { View } from 'react-native';
 import * as THREE from 'three';
@@ -98,19 +98,33 @@ const ProceduralStage = ({
   const { group: characterGroup, parts } = useMemo(() => buildCharacter(slug), [slug]);
   const setGroup = useMemo(() => buildSet(slug), [slug]);
 
-  const root = useMemo(() => {
+  const { root, shadow } = useMemo(() => {
     const g = new THREE.Group();
     g.add(setGroup);
     g.add(characterGroup);
     const size = meshBounds(characterGroup).getSize(new THREE.Vector3());
-    g.add(buildContactShadow(Math.max(size.x, size.z) * 0.85));
-    return g;
+    const contact = buildContactShadow(Math.max(size.x, size.z) * 0.85);
+    g.add(contact);
+    return { root: g, shadow: contact };
   }, [characterGroup, setGroup]);
 
+  /* The framing is measured ONCE, from the character at rest. Re-measuring it
+   * as the character drifts would move the camera with it, which cancels the
+   * drift exactly — the character would look pinned to the middle of the frame
+   * while the whole set slid about behind it. */
   const framing = useMemo(() => measureCharacter(characterGroup, root), [characterGroup, root]);
   const ground = GROUND_LIGHT[slug] ?? GROUND_LIGHT['buddy-the-dog'] ?? '#8fc46b';
 
   useResolvedRigMood(parts, moodFor(talkState), still);
+
+  /* The shadow is a SIBLING of the character, not a child of it: parented, it
+   * would rise with Lily, Nano and Mira as they hover, and a shadow that
+   * leaves the ground stops being a shadow. So it tracks x and z only, and its
+   * own y never changes. */
+  useFrame(() => {
+    shadow.position.x = characterGroup.position.x;
+    shadow.position.z = characterGroup.position.z;
+  });
 
   return (
     <>

@@ -18,7 +18,23 @@ import { colors, radii, spacing, touchTargets } from '@kids/ui';
  * alone or by motion alone.
  */
 
-/** The four characters, and everything that is theirs alone. */
+/**
+ * The nine characters, and everything that is theirs alone.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ONE HUE EACH, AND NINE OF THEM HAVE TO STAY TELLABLE APART
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * A child navigates the select grid by colour as much as by face, so the nine
+ * `colour` values are spread deliberately around the wheel rather than picked
+ * one at a time: rust, orange, olive, green, teal, blue, periwinkle, violet,
+ * plum. No two adjacent cards share a family, and every card also carries its
+ * own face and its own name — colour is never the only channel.
+ *
+ * `wash` is the pale version of the same hue, and it is doing a second job: it
+ * is the sky behind that character's 3D set (`CharacterWash`), so it has to be
+ * light enough for dark geometry to read against it at every size.
+ */
 export const CAST = {
   'buddy-the-dog': {
     name: 'Buddy the Dog',
@@ -50,6 +66,46 @@ export const CAST = {
     colour: '#3fa37a',
     wash: '#d9eee4',
     tagline: 'A patient owl in a book-lined study. Ask him how anything works.',
+    ages: '6–8, 9–10',
+  },
+  'pip-the-fox': {
+    name: 'Pip the Fox',
+    short: 'Pip',
+    colour: '#e0603d',
+    wash: '#ffdfd2',
+    tagline: 'A little fox in an autumn meadow. Pip is full of questions.',
+    ages: '3–5, 6–8',
+  },
+  'nano-the-robot': {
+    name: 'Nano the Robot',
+    short: 'Nano',
+    colour: '#2ba7b4',
+    wash: '#d4f0f3',
+    tagline: 'A tinkering robot in a busy workshop. He loves how things work.',
+    ages: '6–8, 9–10',
+  },
+  'mira-the-moon': {
+    name: 'Mira the Moon',
+    short: 'Mira',
+    colour: '#7b86d8',
+    wash: '#e4e6fb',
+    tagline: 'A quiet moon above the clouds. Mira is lovely at bedtime.',
+    ages: '3–5, 6–8, 9–10',
+  },
+  'captain-zia': {
+    name: 'Captain Zia',
+    short: 'Zia',
+    colour: '#7aa53c',
+    wash: '#e9f3d5',
+    tagline: 'A river explorer at her jetty. Every trip goes where you say.',
+    ages: '6–8, 9–10',
+  },
+  'dada-jee': {
+    name: 'Dada Jee',
+    short: 'Dada Jee',
+    colour: '#b05c74',
+    wash: '#f8e0e7',
+    tagline: 'A warm grandfather in a lantern-lit courtyard, full of old tales.',
     ages: '6–8, 9–10',
   },
 } as const;
@@ -95,6 +151,11 @@ export const childTheme = {
     lily: CAST['lily-the-fairy'].colour,
     captain: CAST['captain-sky'].colour,
     professor: CAST['professor-owl'].colour,
+    pip: CAST['pip-the-fox'].colour,
+    nano: CAST['nano-the-robot'].colour,
+    mira: CAST['mira-the-moon'].colour,
+    zia: CAST['captain-zia'].colour,
+    dada: CAST['dada-jee'].colour,
 
     /** Tile icon discs. Position is the label; the colour is the second channel. */
     tileChat: '#ffe0c7',

@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { BigButton, Body, Title } from '../../../src/components/child/index';
 import { castMember, childTheme } from '../../../src/theme/child-theme';
-import { Diorama } from '../../../src/three/Diorama';
+import { CharacterStage } from '../../../src/three/CharacterStage';
 
 /**
  * Meeting a character before committing to one.
@@ -24,7 +24,7 @@ export default function CharacterDetail() {
   return (
     <View style={styles.screen} testID="screen-character-detail">
       <View style={styles.stage}>
-        <Diorama slug={slug} talkState="idle" testID="character-preview" />
+        <CharacterStage slug={slug} talkState="idle" testID="character-preview" />
       </View>
 
       <View style={styles.body}>

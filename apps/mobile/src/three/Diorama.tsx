@@ -68,6 +68,14 @@ export const GROUND_LIGHT: Readonly<Record<string, string>> = {
   'lily-the-fairy': '#77b48a',
   'captain-sky': '#8d9bb5',
   'professor-owl': '#a97f57',
+  /* Autumn meadow, workshop concrete, night cloud, river grass, courtyard
+   * earth. Each one is the colour the set's own floor already is, so bounce
+   * light reads as coming from the place rather than from a studio. */
+  'pip-the-fox': '#c9a64a',
+  'nano-the-robot': '#9aa3ad',
+  'mira-the-moon': '#8f97d6',
+  'captain-zia': '#6f8f4a',
+  'dada-jee': '#b08a63',
 };
 
 export const STAGE_FOV = 50;
@@ -513,7 +521,10 @@ export interface DioramaProps {
 export const useDioramaOrbit = (
   slug: string,
   interactive: boolean,
-): { orbit: React.RefObject<OrbitState>; panHandlers: ReturnType<typeof PanResponder.create>['panHandlers'] } => {
+): {
+  orbit: React.RefObject<OrbitState>;
+  panHandlers: ReturnType<typeof PanResponder.create>['panHandlers'];
+} => {
   const orbit = useRef<OrbitState>(freshOrbit());
 
   useEffect(() => {

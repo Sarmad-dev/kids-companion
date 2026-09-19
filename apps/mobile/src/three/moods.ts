@@ -48,6 +48,27 @@ export interface MoodTuning {
   /** Whether the mouth is working, and the head-bob period that goes with it. */
   readonly mouth: boolean;
   readonly bobPeriod: number;
+  /**
+   * How far the whole character drifts around its spot, in world units.
+   *
+   * ═══════════════════════════════════════════════════════════════════════
+   * WHY A CHARACTER THAT ONLY BREATHES STILL READS AS A STATUE
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Breath, sway and blink are all ON the body: they change its shape without
+   * changing where it is. A four-year-old watching for thirty seconds reads
+   * that as a very good statue, because nothing has ever moved past anything
+   * else. A few centimetres of drift and a few degrees of turn — enough that
+   * the character's relationship to the fence post behind it changes — is
+   * what makes it a creature standing there rather than a model of one.
+   *
+   * It is deliberately smallest while LISTENING. A character that wanders off
+   * while a child is talking to it has stopped paying attention, and that is
+   * the one moment in the app where undivided attention is the message.
+   */
+  readonly wander: number;
+  /** Seconds for one there-and-back of that drift. */
+  readonly wanderPeriod: number;
 }
 
 export const MOODS: Readonly<Record<Mood, MoodTuning>> = {
@@ -64,6 +85,8 @@ export const MOODS: Readonly<Record<Mood, MoodTuning>> = {
     limbPeriod: 3,
     mouth: false,
     bobPeriod: 0,
+    wander: 0.13,
+    wanderPeriod: 7.5,
   },
   /* Leaning in IS the whole message. Nine degrees toward the child, brows up,
    * faster breath — a body language a pre-verbal child already reads. */
@@ -80,6 +103,8 @@ export const MOODS: Readonly<Record<Mood, MoodTuning>> = {
     limbPeriod: 1.4,
     mouth: false,
     bobPeriod: 0,
+    wander: 0.04,
+    wanderPeriod: 6.0,
   },
   /* The biggest tilt and turn, and the fastest blink: visibly working on it. */
   thinking: {
@@ -95,6 +120,8 @@ export const MOODS: Readonly<Record<Mood, MoodTuning>> = {
     limbPeriod: 3.4,
     mouth: false,
     bobPeriod: 0,
+    wander: 0.09,
+    wanderPeriod: 5.0,
   },
   talking: {
     swayPeriod: 0.85,
@@ -109,6 +136,8 @@ export const MOODS: Readonly<Record<Mood, MoodTuning>> = {
     limbPeriod: 0.85,
     mouth: true,
     bobPeriod: 0.85,
+    wander: 0.11,
+    wanderPeriod: 3.4,
   },
   sad: {
     swayPeriod: 6,
@@ -123,6 +152,8 @@ export const MOODS: Readonly<Record<Mood, MoodTuning>> = {
     limbPeriod: 5,
     mouth: false,
     bobPeriod: 0,
+    wander: 0.03,
+    wanderPeriod: 9.0,
   },
 };
 
@@ -131,6 +162,26 @@ export const BLINK_SECONDS = 0.16;
 
 /** The mouth hinge, in hertz. Fast enough to read as speech, not as chewing. */
 export const MOUTH_HZ = 7;
+
+/**
+ * The slower beat that decides how wide each of those openings gets.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * WHY ONE SINE IS NOT A MOUTH
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `MOUTH_HZ` alone opens the mouth by the identical amount every time, which
+ * is a metronome, and a metronome is what a child reads as "the toy is doing
+ * its noise" rather than "she is telling me something". Real speech varies the
+ * opening constantly — a stressed syllable is wide, an unstressed one barely
+ * parts the lips.
+ *
+ * So the fast term is multiplied by a slow one at this rate, which is roughly
+ * phrase speed. The product is still a pure function of `(mood, elapsed)` —
+ * no audio analysis, no viseme track, nothing to keep in sync with a stream
+ * that may not have started yet — and it costs one more `sin` per frame.
+ */
+export const MOUTH_ENVELOPE_HZ = 1.9;
 
 export const moodFor = (state: TalkState): Mood => {
   switch (state) {

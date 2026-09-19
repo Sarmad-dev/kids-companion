@@ -212,5 +212,17 @@ const CHARACTERS: Readonly<Record<CharacterSlug, CharacterDefinition>> = {
 /** Buddy is the fallback everywhere else in the app already defaults to. */
 export const DEFAULT_CHARACTER_SLUG: CharacterSlug = 'buddy-the-dog';
 
+/**
+ * Whether this slug has a `.glb` in `assets/models`.
+ *
+ * Four of the nine characters do; the five added later are built from
+ * primitives in `procedural-cast.ts` instead. `characterDefinitionFor` falls
+ * back to Buddy for anything it does not know, which is right for a typo in a
+ * route param and WRONG for Pip — it would quietly show a child the dog they
+ * did not choose. So callers that can render either kind ask this first, and
+ * `CharacterStage` is the one that does.
+ */
+export const hasBundledModel = (slug: string): slug is CharacterSlug => isCharacterSlug(slug);
+
 export const characterDefinitionFor = (slug: string): CharacterDefinition =>
   isCharacterSlug(slug) ? CHARACTERS[slug] : CHARACTERS[DEFAULT_CHARACTER_SLUG];
